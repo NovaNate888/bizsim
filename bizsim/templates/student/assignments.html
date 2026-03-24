@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Assignments{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('student.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active">{{ section.course.display_name }} — Section {{ section.section_name }}</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h2 class="fw-bold mb-0">{{ section.course.display_name }}</h2>
+    <p class="text-muted mb-0">
+      Section {{ section.section_name }} &bull;
+      {{ section.semester.name }} &bull;
+      {{ section.course.instructor.name }}
+    </p>
+  </div>
+</div>
+
+{% if assignments %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Assignment</th>
+          <th>Metric</th>
+          <th>Due Date</th>
+          <th>Best Score</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in assignments %}
+          <tr>
+            <td class="fw-semibold">{{ a.title }}</td>
+            <td><span class="badge bg-secondary">{{ a.scoring_metric.upper() }}</span></td>
+            <td>
+              {% if a.due_date %}
+                {{ a.due_date.strftime('%b %d, %Y') }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if best_scores[a.id] %}
+                <span class="fw-semibold text-primary">
+                  {{ "%.4f"|format(best_scores[a.id].score) }}
+                </span>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if a.is_past_due() %}
+                <span class="badge bg-danger">Closed</span>
+              {% else %}
+                <span class="badge bg-success">Open</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <a href="{{ url_for('student.assignment_detail', section_id=section.id, assignment_id=a.id) }}"
+                 class="btn btn-sm btn-outline-primary me-1">
+                <i class="bi bi-upload me-1"></i>Submit
+              </a>
+              <a href="{{ url_for('student.leaderboard', section_id=section.id, assignment_id=a.id) }}"
+                 class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-trophy me-1"></i>Leaderboard
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="alert alert-info">No assignments have been posted yet.</div>
+{% endif %}
+{% endblock %}

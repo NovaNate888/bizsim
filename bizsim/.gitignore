@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+venv/
+.venv/
+
+# Database
+*.db
+*.sqlite3
+
+# Uploads / generated files
+uploads/
+ground_truth/
+datasets/
+
+# Flask-Migrate (keep migrations/ if you add it)
+instance/
+
+# OS
+.DS_Store
+Thumbs.db

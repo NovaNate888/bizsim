@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard — {{ assignment.title }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('instructor.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('instructor.section_detail', section_id=section.id) }}">
+        {{ section.course.display_name }} — §{{ section.section_name }}
+      </a>
+    </li>
+    <li class="breadcrumb-item active">Leaderboard</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h2 class="fw-bold mb-1">
+      <i class="bi bi-trophy text-warning me-2"></i>Leaderboard (Instructor View)
+    </h2>
+    <p class="text-muted mb-0">{{ assignment.title }} &mdash; {{ section.full_label }}</p>
+  </div>
+  <span class="badge bg-secondary fs-6">{{ assignment.metric_label }}</span>
+</div>
+
+{% if board %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th width="80">Rank</th>
+          <th>Alias</th>
+          <th>Email</th>
+          <th>Best Score</th>
+          <th>Total Submissions</th>
+          <th>Last Submission</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in board %}
+          <tr>
+            <td>
+              {% if entry.rank == 1 %}🥇
+              {% elif entry.rank == 2 %}🥈
+              {% elif entry.rank == 3 %}🥉
+              {% else %}{{ entry.rank }}{% endif %}
+            </td>
+            <td class="fw-semibold">{{ entry.alias }}</td>
+            <td class="text-muted small">{{ entry.email }}</td>
+            <td>
+              {% if entry.score is not none %}
+                {{ "%.4f"|format(entry.score) }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>{{ entry.total_submissions }}</td>
+            <td class="text-muted small">
+              {% if entry.submitted_at %}
+                {{ entry.submitted_at.strftime('%b %d, %Y %I:%M %p') }}
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="alert alert-info">No submissions yet.</div>
+{% endif %}
+{% endblock %}

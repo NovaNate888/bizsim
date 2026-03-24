@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}New Assignment{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('instructor.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('instructor.section_detail', section_id=section.id) }}">
+        {{ section.course.display_name }} — §{{ section.section_name }}
+      </a>
+    </li>
+    <li class="breadcrumb-item active">New Assignment</li>
+  </ol>
+</nav>
+
+<h2 class="fw-bold mb-4">Create Assignment</h2>
+
+<div class="card shadow-sm border-0">
+  <div class="card-body">
+    <form method="POST" enctype="multipart/form-data">
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-8">
+          <label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" name="title" required />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Scoring Metric <span class="text-danger">*</span></label>
+          <select class="form-select" name="scoring_metric" required>
+            {% for value, label in metric_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Description</label>
+        <textarea class="form-control" name="description" rows="3"
+                  placeholder="Describe the task, data, and submission format…"></textarea>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Target Column Name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" name="target_column"
+                 placeholder="e.g. price" required />
+          <div class="form-text">Column in ground truth CSV to score against.</div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Max Submissions / Day</label>
+          <input type="number" class="form-control" name="max_submissions_per_day"
+                 value="3" min="1" max="100" />
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Due Date</label>
+          <input type="datetime-local" class="form-control" name="due_date" />
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Dataset CSV (for students to download)</label>
+          <input type="file" class="form-control" name="dataset_file" accept=".csv" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Ground Truth CSV <span class="text-danger">*</span></label>
+          <input type="file" class="form-control" name="ground_truth_file" accept=".csv" />
+          <div class="form-text">This file is never shown to students.</div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-success fw-semibold">
+          <i class="bi bi-check2-circle me-1"></i>Create Assignment
+        </button>
+        <a href="{{ url_for('instructor.section_detail', section_id=section.id) }}"
+           class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

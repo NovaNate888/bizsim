@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Register{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-7">
+    <div class="card shadow-sm border-0">
+      <div class="card-body p-4">
+        <h2 class="card-title mb-1 fw-bold text-center">Create Your Account</h2>
+        <p class="text-muted text-center mb-4 small">Use your school email address</p>
+
+        <form method="POST" action="{{ url_for('auth.register') }}">
+
+          <!-- Email & Password -->
+          <div class="mb-3">
+            <label for="email" class="form-label">School Email <span class="text-danger">*</span></label>
+            <input type="email" class="form-control" id="email" name="email"
+                   placeholder="you@university.edu" required />
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label for="password" class="form-label">Password <span class="text-danger">*</span></label>
+              <input type="password" class="form-control" id="password" name="password"
+                     minlength="8" required />
+              <div class="form-text">Minimum 8 characters</div>
+            </div>
+            <div class="col-md-6">
+              <label for="confirm_password" class="form-label">Confirm Password <span class="text-danger">*</span></label>
+              <input type="password" class="form-control" id="confirm_password"
+                     name="confirm_password" required />
+            </div>
+          </div>
+
+          <hr class="my-3" />
+          <h6 class="text-muted mb-3">
+            <i class="bi bi-person-badge me-1"></i>Course Enrollment
+          </h6>
+
+          <!-- Section selector rendered as a single <select> with grouped labels -->
+          <div class="mb-4">
+            <label for="section_id" class="form-label">
+              Semester / Instructor / Course / Section <span class="text-danger">*</span>
+            </label>
+
+            {% if sections %}
+              <select class="form-select" id="section_id" name="section_id" required>
+                <option value="">— Select your section —</option>
+
+                {# Group by semester #}
+                {% set ns = namespace(current_sem='') %}
+                {% for section in sections | sort(attribute='semester.name') %}
+                  {% if section.semester.name != ns.current_sem %}
+                    {% if ns.current_sem != '' %}</optgroup>{% endif %}
+                    <optgroup label="{{ section.semester.name }}">
+                    {% set ns.current_sem = section.semester.name %}
+                  {% endif %}
+                  <option value="{{ section.id }}">
+                    {{ section.course.instructor.name }} &mdash;
+                    {{ section.course.display_name }} &mdash;
+                    Section {{ section.section_name }}
+                  </option>
+                {% endfor %}
+                {% if sections %}</optgroup>{% endif %}
+              </select>
+            {% else %}
+              <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                No active sections are currently available. Please contact your instructor.
+              </div>
+            {% endif %}
+          </div>
+
+          <button type="submit" class="btn btn-success w-100 fw-semibold"
+                  {% if not sections %}disabled{% endif %}>
+            <i class="bi bi-person-plus me-1"></i>Create Account
+          </button>
+        </form>
+
+        <hr />
+        <p class="text-center small mb-0">
+          Already have an account? <a href="{{ url_for('auth.login') }}">Sign in</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Confirm password match feedback
+  const pw = document.getElementById('password');
+  const cpw = document.getElementById('confirm_password');
+  cpw.addEventListener('input', () => {
+    cpw.setCustomValidity(pw.value !== cpw.value ? 'Passwords do not match.' : '');
+  });
+</script>
+{% endblock %}

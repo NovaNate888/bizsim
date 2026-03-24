@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard — {{ assignment.title }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('student.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('student.assignments', section_id=section.id) }}">
+        {{ section.course.display_name }}
+      </a>
+    </li>
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('student.assignment_detail', section_id=section.id, assignment_id=assignment.id) }}">
+        {{ assignment.title }}
+      </a>
+    </li>
+    <li class="breadcrumb-item active">Leaderboard</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h2 class="fw-bold mb-1">
+      <i class="bi bi-trophy text-warning me-2"></i>Leaderboard
+    </h2>
+    <p class="text-muted mb-0">{{ assignment.title }} &mdash; {{ section.full_label }}</p>
+  </div>
+  <span class="badge bg-secondary fs-6">{{ assignment.metric_label }}</span>
+</div>
+
+{% if board %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th width="80">Rank</th>
+          <th>Alias</th>
+          <th>Best Score</th>
+          <th>Last Submission</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in board %}
+          <tr class="{% if entry.is_me %}table-primary fw-semibold{% endif %}">
+            <td>
+              {% if entry.rank == 1 %}
+                <span class="fs-5">🥇</span>
+              {% elif entry.rank == 2 %}
+                <span class="fs-5">🥈</span>
+              {% elif entry.rank == 3 %}
+                <span class="fs-5">🥉</span>
+              {% else %}
+                {{ entry.rank }}
+              {% endif %}
+            </td>
+            <td>
+              {{ entry.alias }}
+              {% if entry.is_me %}
+                <span class="badge bg-primary ms-1">You</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if entry.score is not none %}
+                {{ "%.4f"|format(entry.score) }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small">
+              {% if entry.submitted_at %}
+                {{ entry.submitted_at.strftime('%b %d, %Y %I:%M %p') }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="alert alert-info">No submissions yet. Be the first!</div>
+{% endif %}
+{% endblock %}

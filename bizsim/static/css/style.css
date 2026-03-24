@@ -1,0 +1,70 @@
+/* BizSim custom styles */
+
+:root {
+  --bs-primary: #1a6eb5;
+}
+
+body {
+  background-color: #f4f6f9;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Navbar */
+.navbar-brand {
+  font-size: 1.3rem;
+  letter-spacing: -0.5px;
+}
+
+/* Cards */
+.card {
+  border-radius: 0.75rem;
+}
+
+.card-header {
+  background-color: #fff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-weight: 600;
+}
+
+/* Tables */
+.table th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6c757d;
+}
+
+/* Leaderboard rank column */
+.table td:first-child {
+  font-weight: 700;
+}
+
+/* Best score highlight row */
+.table-primary td {
+  background-color: #e8f0fe !important;
+}
+
+/* Breadcrumb */
+.breadcrumb {
+  font-size: 0.875rem;
+}
+
+/* Stat cards */
+.display-6 {
+  line-height: 1;
+}
+
+/* File input */
+input[type="file"].form-control {
+  cursor: pointer;
+}
+
+/* Footer */
+footer {
+  font-size: 0.8rem;
+}
+
+/* Alert links */
+.alert a {
+  font-weight: 600;
+}
