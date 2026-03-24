@@ -49,11 +49,11 @@ def _dev_mode() -> bool:
 
 def _print_dev_link(label: str, url: str, recipient: str) -> None:
     border = "=" * 60
-    print(f"\n{border}")
-    print(f"  [DEV] {label}")
-    print(f"  To: {recipient}")
-    print(f"  {url}")
-    print(f"{border}\n")
+    print(f"\n{border}", flush=True)
+    print(f"  [DEV] {label}", flush=True)
+    print(f"  To: {recipient}", flush=True)
+    print(f"  {url}", flush=True)
+    print(f"{border}\n", flush=True)
 
 
 def send_verification_email(user_email: str) -> None:
