@@ -43,9 +43,26 @@ def verify_reset_token(token: str, expiry: int = 1800) -> str | None:
 # Email senders
 # ---------------------------------------------------------------------------
 
+def _dev_mode() -> bool:
+    return current_app.config.get("DEBUG", False)
+
+
+def _print_dev_link(label: str, url: str, recipient: str) -> None:
+    border = "=" * 60
+    print(f"\n{border}")
+    print(f"  [DEV] {label}")
+    print(f"  To: {recipient}")
+    print(f"  {url}")
+    print(f"{border}\n")
+
+
 def send_verification_email(user_email: str) -> None:
     token = generate_verification_token(user_email)
     verify_url = url_for("auth.verify_email", token=token, _external=True)
+
+    if _dev_mode():
+        _print_dev_link("Email Verification Link", verify_url, user_email)
+        return
 
     msg = Message(
         subject="Verify your BizSim account",
@@ -64,6 +81,10 @@ def send_verification_email(user_email: str) -> None:
 def send_password_reset_email(user_email: str) -> None:
     token = generate_reset_token(user_email)
     reset_url = url_for("auth.reset_password", token=token, _external=True)
+
+    if _dev_mode():
+        _print_dev_link("Password Reset Link", reset_url, user_email)
+        return
 
     msg = Message(
         subject="Reset your BizSim password",
