@@ -136,6 +136,7 @@ def assignment_detail(section_id: int, assignment_id: int):
     enrollment = Enrollment.query.filter_by(
         user_id=current_user.id, section_id=section_id
     ).first_or_404()
+    section = enrollment.section
     assignment = Assignment.query.get_or_404(assignment_id)
 
     if assignment.section_id != section_id:

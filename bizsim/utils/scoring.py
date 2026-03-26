@@ -51,9 +51,12 @@ def _coerce_predictions(
         pred_col = non_id[0]
 
     if "id" in gt.columns and "id" in sub.columns:
-        merged = gt[["id", target_col]].merge(sub[["id", pred_col]], on="id", how="left")
+        # Rename the prediction column before merging to avoid pandas adding
+        # _x/_y suffixes when target_col and pred_col share the same name.
+        sub_aligned = sub[["id", pred_col]].rename(columns={pred_col: "__pred__"})
+        merged = gt[["id", target_col]].merge(sub_aligned, on="id", how="left")
         y_true = merged[target_col].values
-        y_pred = merged[pred_col].values
+        y_pred = merged["__pred__"].values
     else:
         if len(gt) != len(sub):
             raise ValueError(
