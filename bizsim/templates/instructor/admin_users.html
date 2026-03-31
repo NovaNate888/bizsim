@@ -87,8 +87,12 @@
             {% set enrollments = user.enrollments.all() %}
             {% if enrollments %}
               {% for enr in enrollments %}
+                {% set sec = enr.section %}
                 <span class="badge bg-light text-dark border">
-                  {{ enr.section.full_label }}
+                  {{ sec.semester.name }} |
+                  {{ sec.course.instructor.user.email }} |
+                  {{ sec.course.display_name }} |
+                  Section {{ sec.section_name }}
                 </span>
               {% endfor %}
             {% else %}
