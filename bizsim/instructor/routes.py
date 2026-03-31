@@ -46,6 +46,17 @@ def instructor_required(f):
     return decorated
 
 
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for("auth.login"))
+        if not current_user.is_admin:
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated
+
+
 def _get_instructor_or_404() -> Instructor:
     instr = Instructor.query.filter_by(user_id=current_user.id).first()
     if not instr and not current_user.is_admin:
@@ -523,6 +534,89 @@ def remove_enrollment(enrollment_id: int):
     db.session.commit()
     flash("Student removed from section.", "info")
     return redirect(url_for("instructor.section_detail", section_id=section_id))
+
+
+# ---------------------------------------------------------------------------
+# Admin — User Management
+# ---------------------------------------------------------------------------
+
+@instructor_bp.route("/admin/users")
+@login_required
+@admin_required
+def admin_users():
+    semester_id = request.args.get("semester_id", type=int)
+    course_id   = request.args.get("course_id",   type=int)
+    section_id  = request.args.get("section_id",  type=int)
+    search      = request.args.get("q", "").strip()
+
+    query = (
+        User.query
+        .filter(User.is_admin == False)  # noqa: E712
+        .order_by(User.created_at.desc())
+    )
+
+    if search:
+        query = query.filter(User.email.ilike(f"%{search}%"))
+
+    if section_id:
+        query = (
+            query.join(Enrollment, Enrollment.user_id == User.id)
+                 .filter(Enrollment.section_id == section_id)
+        )
+    elif course_id:
+        query = (
+            query.join(Enrollment, Enrollment.user_id == User.id)
+                 .join(Section, Section.id == Enrollment.section_id)
+                 .filter(Section.course_id == course_id)
+        )
+    elif semester_id:
+        query = (
+            query.join(Enrollment, Enrollment.user_id == User.id)
+                 .join(Section, Section.id == Enrollment.section_id)
+                 .filter(Section.semester_id == semester_id)
+        )
+
+    users = query.all()
+    semesters = Semester.query.order_by(Semester.name).all()
+    courses   = Course.query.order_by(Course.name).all()
+    sections  = Section.query.order_by(Section.section_name).all()
+
+    return render_template(
+        "instructor/admin_users.html",
+        users=users,
+        semesters=semesters,
+        courses=courses,
+        sections=sections,
+        selected_semester=semester_id,
+        selected_course=course_id,
+        selected_section=section_id,
+        search=search,
+    )
+
+
+@instructor_bp.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_user(user_id: int):
+    user = User.query.get_or_404(user_id)
+    if user.is_admin:
+        abort(403)
+    Enrollment.query.filter_by(user_id=user.id).delete()
+    db.session.delete(user)
+    db.session.commit()
+    flash(f"User {user.email} deleted.", "success")
+    return redirect(url_for("instructor.admin_users", **request.form))
+
+
+@instructor_bp.route("/admin/users/<int:user_id>/verify", methods=["POST"])
+@login_required
+@admin_required
+def admin_verify_user(user_id: int):
+    user = User.query.get_or_404(user_id)
+    user.is_verified = True
+    db.session.commit()
+    flash(f"{user.email} marked as verified.", "success")
+    return redirect(url_for("instructor.admin_users", **request.form))
 
 
 # ---------------------------------------------------------------------------
