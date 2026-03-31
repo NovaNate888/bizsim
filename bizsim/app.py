@@ -23,6 +23,7 @@ def create_app(config_name: str = "default") -> Flask:
 
     with app.app_context():
         db.create_all()
+        _seed_admin(app)
 
     # Flask-Login
     login_manager = LoginManager(app)
