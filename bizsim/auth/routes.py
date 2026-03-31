@@ -281,6 +281,29 @@ def reset_password(token):
     return render_template("auth/reset_password.html", token=token)
 
 
+@auth_bp.route("/change-password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    if request.method == "POST":
+        current_pw = request.form.get("current_password", "")
+        new_pw = request.form.get("new_password", "")
+        confirm_pw = request.form.get("confirm_password", "")
+
+        if not current_user.check_password(current_pw):
+            flash("Current password is incorrect.", "danger")
+        elif len(new_pw) < 8:
+            flash("New password must be at least 8 characters.", "danger")
+        elif new_pw != confirm_pw:
+            flash("New passwords do not match.", "danger")
+        else:
+            current_user.set_password(new_pw)
+            db.session.commit()
+            flash("Password changed successfully.", "success")
+            return redirect(url_for("auth.change_password"))
+
+    return render_template("auth/change_password.html")
+
+
 @auth_bp.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
