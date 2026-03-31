@@ -8,7 +8,9 @@ from models import db, User
 from utils.email import mail
 
 
-def create_app(config_name: str = "default") -> Flask:
+def create_app(config_name: str | None = None) -> Flask:
+    if config_name is None:
+        config_name = os.environ.get("FLASK_ENV", "development")
     app = Flask(__name__)
     app.config.from_object(config[config_name])
 
