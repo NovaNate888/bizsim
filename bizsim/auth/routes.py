@@ -117,23 +117,25 @@ def register():
         # Enroll user in selected section
         enrollment = Enrollment(user_id=user.id, section_id=section_id)
         db.session.add(enrollment)
-        db.session.commit()
 
-        # Send verification email
+        # Send verification email before committing — roll back if it fails
         try:
             send_verification_email(email)
-            flash(
-                "Account created! Please check your email to verify your account.",
-                "success",
-            )
         except Exception as exc:
+            db.session.rollback()
             current_app.logger.error("Failed to send verification email: %s", exc)
             flash(
-                "Account created but we could not send the verification email. "
-                "Contact your instructor.",
-                "warning",
+                "We could not send a verification email. "
+                "Please check your email address and try again.",
+                "danger",
             )
+            return render_template("auth/register.html", sections=sections)
 
+        db.session.commit()
+        flash(
+            "Account created! Please check your email to verify your account.",
+            "success",
+        )
         return redirect(url_for("auth.login"))
 
     return render_template("auth/register.html", sections=sections)
