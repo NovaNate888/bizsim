@@ -6,12 +6,27 @@ load_dotenv()
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 
+def _database_url() -> str:
+    """
+    Read DATABASE_URL from the environment.
+    Render (and Heroku) supply postgres:// URLs, but SQLAlchemy 2.x
+    requires the postgresql:// scheme — fix it automatically.
+    Falls back to a local SQLite file for development.
+    """
+    url = os.environ.get("DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'bizsim.db')}")
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return url
+
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me")
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'bizsim.db')}"
-    )
+    SQLALCHEMY_DATABASE_URI = _database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+    }
 
     # Mail
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
