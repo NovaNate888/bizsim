@@ -142,6 +142,43 @@ def score_submission(
         raise ValueError(f"Unknown scoring metric: '{metric}'")
 
 
+def score_from_streams(
+    submission_bytes: bytes,
+    ground_truth_bytes: bytes,
+    metric: str,
+    target_col: str,
+) -> float:
+    """Score using both submission and ground truth supplied as bytes."""
+    gt = pd.read_csv(io.BytesIO(ground_truth_bytes))
+    sub = pd.read_csv(io.BytesIO(submission_bytes))
+
+    if target_col not in gt.columns:
+        raise ValueError(
+            f"Target column '{target_col}' not found in ground truth CSV."
+        )
+
+    y_true, y_pred = _coerce_predictions(gt, sub, target_col)
+
+    metric = metric.lower()
+    if metric == "rmse":
+        return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+    elif metric == "mae":
+        return float(mean_absolute_error(y_true, y_pred))
+    elif metric == "accuracy":
+        return float(accuracy_score(y_true.round().astype(int), y_pred.round().astype(int)))
+    elif metric == "f1":
+        y_ti = y_true.round().astype(int)
+        y_pi = y_pred.round().astype(int)
+        avg = "binary" if len(np.unique(y_ti)) <= 2 else "macro"
+        return float(f1_score(y_ti, y_pi, average=avg, zero_division=0))
+    elif metric == "auc":
+        return float(roc_auc_score(y_true, y_pred))
+    elif metric == "r2":
+        return float(r2_score(y_true, y_pred))
+    else:
+        raise ValueError(f"Unknown scoring metric: '{metric}'")
+
+
 def score_from_bytes(
     submission_bytes: bytes,
     ground_truth_path: str,

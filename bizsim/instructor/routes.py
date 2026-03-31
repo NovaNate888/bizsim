@@ -1,3 +1,4 @@
+import io
 import os
 import uuid
 from datetime import datetime
@@ -10,10 +11,10 @@ from flask import (
     redirect,
     render_template,
     request,
-    send_from_directory,
     url_for,
 )
 from flask_login import current_user, login_required
+from utils import storage
 
 from models import (
     Assignment,
@@ -318,9 +319,7 @@ def new_assignment(section_id: int):
         if dataset_file and dataset_file.filename:
             if _allowed_file(dataset_file.filename):
                 fname = f"assignment_{assignment.id}_{uuid.uuid4().hex}_dataset.csv"
-                dataset_dir = current_app.config["DATASET_FOLDER"]
-                os.makedirs(dataset_dir, exist_ok=True)
-                dataset_file.save(os.path.join(dataset_dir, fname))
+                storage.upload_fileobj(dataset_file.stream, f"datasets/{fname}")
                 assignment.dataset_filename = fname
             else:
                 flash("Dataset must be a CSV file.", "warning")
@@ -330,9 +329,7 @@ def new_assignment(section_id: int):
         if gt_file and gt_file.filename:
             if _allowed_file(gt_file.filename):
                 fname = f"assignment_{assignment.id}_{uuid.uuid4().hex}_gt.csv"
-                gt_dir = current_app.config["GROUND_TRUTH_FOLDER"]
-                os.makedirs(gt_dir, exist_ok=True)
-                gt_file.save(os.path.join(gt_dir, fname))
+                storage.upload_fileobj(gt_file.stream, f"ground_truth/{fname}")
                 assignment.ground_truth_filename = fname
             else:
                 flash("Ground truth must be a CSV file.", "warning")
@@ -388,9 +385,7 @@ def edit_assignment(assignment_id: int):
         if dataset_file and dataset_file.filename:
             if _allowed_file(dataset_file.filename):
                 fname = f"assignment_{assignment.id}_{uuid.uuid4().hex}_dataset.csv"
-                dataset_dir = current_app.config["DATASET_FOLDER"]
-                os.makedirs(dataset_dir, exist_ok=True)
-                dataset_file.save(os.path.join(dataset_dir, fname))
+                storage.upload_fileobj(dataset_file.stream, f"datasets/{fname}")
                 assignment.dataset_filename = fname
 
         # Handle new ground truth upload
@@ -398,9 +393,7 @@ def edit_assignment(assignment_id: int):
         if gt_file and gt_file.filename:
             if _allowed_file(gt_file.filename):
                 fname = f"assignment_{assignment.id}_{uuid.uuid4().hex}_gt.csv"
-                gt_dir = current_app.config["GROUND_TRUTH_FOLDER"]
-                os.makedirs(gt_dir, exist_ok=True)
-                gt_file.save(os.path.join(gt_dir, fname))
+                storage.upload_fileobj(gt_file.stream, f"ground_truth/{fname}")
                 assignment.ground_truth_filename = fname
 
         db.session.commit()

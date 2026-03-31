@@ -1,4 +1,4 @@
-import os
+import io
 import uuid
 from datetime import datetime, timezone
 
@@ -9,13 +9,13 @@ from flask import (
     redirect,
     render_template,
     request,
-    send_from_directory,
     url_for,
 )
 from flask_login import current_user, login_required
 
 from models import Assignment, Enrollment, Section, Submission, db
-from utils.scoring import score_submission
+from utils import storage
+from utils.scoring import score_from_streams
 
 from . import student_bp
 
@@ -183,48 +183,39 @@ def assignment_detail(section_id: int, assignment_id: int):
             flash("Only CSV files are accepted.", "danger")
             return redirect(request.url)
 
-        # Save file
-        upload_dir = os.path.join(
-            current_app.config["UPLOAD_FOLDER"],
-            str(assignment_id),
-            str(current_user.id),
-        )
-        os.makedirs(upload_dir, exist_ok=True)
+        # Read file bytes once, then upload to R2
+        file_bytes = file.read()
         unique_name = f"{uuid.uuid4().hex}.csv"
-        save_path = os.path.join(upload_dir, unique_name)
-        file.save(save_path)
+        r2_key = f"submissions/{assignment_id}/{current_user.id}/{unique_name}"
+        storage.upload_fileobj(io.BytesIO(file_bytes), r2_key)
 
         # Score the submission
         score = None
         error_message = None
         if assignment.ground_truth_filename and assignment.target_column:
-            gt_path = os.path.join(
-                current_app.config["GROUND_TRUTH_FOLDER"],
-                assignment.ground_truth_filename,
-            )
-            if os.path.exists(gt_path):
-                try:
-                    score = score_submission(
-                        save_path,
-                        gt_path,
-                        assignment.scoring_metric,
-                        assignment.target_column,
-                    )
-                except Exception as exc:
-                    error_message = str(exc)
-                    current_app.logger.warning(
-                        "Scoring error for user %s, assignment %s: %s",
-                        current_user.id,
-                        assignment_id,
-                        exc,
-                    )
-            else:
-                error_message = "Ground truth file not found; scoring deferred."
+            try:
+                gt_bytes = storage.download_as_bytes(
+                    f"ground_truth/{assignment.ground_truth_filename}"
+                )
+                score = score_from_streams(
+                    file_bytes,
+                    gt_bytes,
+                    assignment.scoring_metric,
+                    assignment.target_column,
+                )
+            except Exception as exc:
+                error_message = str(exc)
+                current_app.logger.warning(
+                    "Scoring error for user %s, assignment %s: %s",
+                    current_user.id,
+                    assignment_id,
+                    exc,
+                )
         else:
             error_message = "No ground truth configured; submission stored."
 
-        # Relative filename stored in DB
-        rel_filename = os.path.join(str(assignment_id), str(current_user.id), unique_name)
+        # R2 key stored in DB
+        rel_filename = r2_key
 
         submission = Submission(
             user_id=current_user.id,
@@ -285,12 +276,8 @@ def download_dataset(assignment_id: int):
         flash("No dataset has been uploaded for this assignment yet.", "warning")
         return redirect(url_for("student.dashboard"))
 
-    dataset_dir = current_app.config["DATASET_FOLDER"]
-    return send_from_directory(
-        dataset_dir,
-        assignment.dataset_filename,
-        as_attachment=True,
-    )
+    url = storage.generate_presigned_url(f"datasets/{assignment.dataset_filename}")
+    return redirect(url)
 
 
 # ---------------------------------------------------------------------------
