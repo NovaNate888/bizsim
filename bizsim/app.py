@@ -21,6 +21,9 @@ def create_app(config_name: str = "default") -> Flask:
     mail.init_app(app)
     migrate = Migrate(app, db)
 
+    with app.app_context():
+        db.create_all()
+
     # Flask-Login
     login_manager = LoginManager(app)
     login_manager.login_view = "auth.login"
