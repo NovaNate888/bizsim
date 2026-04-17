@@ -712,6 +712,35 @@ def remove_enrollment(enrollment_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Instructor profile
+# ---------------------------------------------------------------------------
+
+@instructor_bp.route("/profile", methods=["GET", "POST"])
+@login_required
+@instructor_required
+def profile():
+    instr = _get_instructor_or_404()
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        department = request.form.get("department", "").strip()
+
+        if not name:
+            flash("Name cannot be empty.", "danger")
+        elif len(name) > 128:
+            flash("Name must be 128 characters or fewer.", "danger")
+        else:
+            instr.name = name
+            instr.department = department or None
+            db.session.commit()
+            flash("Profile updated.", "success")
+
+        return redirect(url_for("instructor.profile"))
+
+    return render_template("instructor/profile.html", instructor=instr)
+
+
+# ---------------------------------------------------------------------------
 # Admin — User Management
 # ---------------------------------------------------------------------------
 
