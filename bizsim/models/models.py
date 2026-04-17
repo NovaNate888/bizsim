@@ -240,6 +240,10 @@ class Assignment(db.Model):
         cascade="all, delete-orphan"
     )
     submissions = db.relationship("Submission", back_populates="assignment", lazy="dynamic")
+    files = db.relationship(
+        "AssignmentFile", back_populates="assignment", lazy="dynamic",
+        cascade="all, delete-orphan", order_by="AssignmentFile.created_at"
+    )
 
     @property
     def higher_is_better(self) -> bool:
@@ -277,6 +281,25 @@ class Assignment(db.Model):
 
     def __repr__(self) -> str:
         return f"<Assignment {self.title}>"
+
+
+# ---------------------------------------------------------------------------
+# AssignmentFile — one or more downloadable files attached to an assignment
+# ---------------------------------------------------------------------------
+
+class AssignmentFile(db.Model):
+    __tablename__ = "assignment_files"
+
+    id = db.Column(db.Integer, primary_key=True)
+    assignment_id = db.Column(db.Integer, db.ForeignKey("assignments.id"), nullable=False)
+    display_name = db.Column(db.String(255), nullable=False)
+    r2_key = db.Column(db.String(512), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    assignment = db.relationship("Assignment", back_populates="files")
+
+    def __repr__(self) -> str:
+        return f"<AssignmentFile {self.display_name} assignment={self.assignment_id}>"
 
 
 # ---------------------------------------------------------------------------

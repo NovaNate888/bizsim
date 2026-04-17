@@ -14,7 +14,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from models import Assignment, Enrollment, Section, Submission, db
+from models import Assignment, AssignmentFile, Enrollment, Section, Submission, db
 from utils import storage
 from utils.scoring import score_from_streams, score_profit_matrix
 
@@ -319,6 +319,31 @@ def download_dataset(assignment_id: int):
         return redirect(url_for("student.dashboard"))
 
     url = storage.generate_presigned_url(f"datasets/{assignment.dataset_filename}")
+    return redirect(url)
+
+
+# ---------------------------------------------------------------------------
+# Per-file dataset download (multi-file support)
+# ---------------------------------------------------------------------------
+
+@student_bp.route("/assignment/<int:assignment_id>/file/<int:file_id>/download")
+@login_required
+def download_assignment_file(assignment_id: int, file_id: int):
+    assignment = Assignment.query.get_or_404(assignment_id)
+    af = AssignmentFile.query.filter_by(id=file_id, assignment_id=assignment_id).first_or_404()
+
+    # Confirm student is enrolled in a section that has this assignment
+    enrolled_section_ids = [e.section_id for e in current_user.enrollments.all()]
+    has_access = False
+    for sid in enrolled_section_ids:
+        section = Section.query.get(sid)
+        if section and assignment_id in {a.id for a in section.get_effective_assignments()}:
+            has_access = True
+            break
+    if not has_access:
+        abort(403)
+
+    url = storage.generate_presigned_url(af.r2_key)
     return redirect(url)
 
 

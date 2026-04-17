@@ -102,16 +102,35 @@
         </div>
       </div>
 
-      <div class="row g-3 mb-4">
-        <div class="col-md-6">
-          <label class="form-label fw-semibold">Dataset CSV (for students to download)</label>
-          <input type="file" class="form-control" name="dataset_file" accept=".csv" />
+      <!-- Dataset files (multiple) -->
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Dataset Files (for students to download)</label>
+        <div id="file-rows">
+          <div class="file-row row g-2 mb-2 align-items-center">
+            <div class="col-md-5">
+              <input type="file" class="form-control form-control-sm" name="new_files" accept=".csv" />
+            </div>
+            <div class="col-md-5">
+              <input type="text" class="form-control form-control-sm" name="new_display_names"
+                     placeholder="Display name (e.g. Batch 1 — Training Data)" />
+            </div>
+            <div class="col-md-2">
+              <button type="button" class="btn btn-sm btn-outline-danger remove-row" style="display:none;">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>
         </div>
-        <div class="col-md-6">
-          <label class="form-label fw-semibold">Ground Truth CSV</label>
-          <input type="file" class="form-control" name="ground_truth_file" accept=".csv" />
-          <div class="form-text">This file is never shown to students.</div>
-        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" id="add-file-row">
+          <i class="bi bi-plus-lg me-1"></i>Add Another File
+        </button>
+        <div class="form-text">Upload one or more CSV files. Students will see a download button for each.</div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Ground Truth CSV</label>
+        <input type="file" class="form-control" name="ground_truth_file" accept=".csv" />
+        <div class="form-text">This file is never shown to students.</div>
       </div>
 
       <div class="d-flex gap-2">
@@ -125,6 +144,7 @@
 </div>
 
 <script>
+  // Profit matrix toggle
   const metricSelect = document.getElementById('scoring-metric');
   const pmConfig = document.getElementById('profit-matrix-config');
   function togglePM() {
@@ -132,5 +152,18 @@
   }
   metricSelect.addEventListener('change', togglePM);
   togglePM();
+
+  // Dynamic file rows
+  document.getElementById('add-file-row').addEventListener('click', function () {
+    const container = document.getElementById('file-rows');
+    const row = container.querySelector('.file-row').cloneNode(true);
+    row.querySelector('input[type="file"]').value = '';
+    row.querySelector('input[type="text"]').value = '';
+    row.querySelector('.remove-row').style.display = '';
+    row.querySelector('.remove-row').addEventListener('click', function () {
+      row.remove();
+    });
+    container.appendChild(row);
+  });
 </script>
 {% endblock %}

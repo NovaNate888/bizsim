@@ -18,6 +18,7 @@ from flask_login import current_user, login_required
 
 from models import (
     Assignment,
+    AssignmentFile,
     Course,
     CourseAssignment,
     Enrollment,
@@ -399,14 +400,7 @@ def new_assignment():
         db.session.add(assignment)
         db.session.flush()
 
-        dataset_file = request.files.get("dataset_file")
-        if dataset_file and dataset_file.filename:
-            if _allowed_file(dataset_file.filename):
-                fname = f"assignment_{assignment.id}_{uuid.uuid4().hex}_dataset.csv"
-                storage.upload_fileobj(dataset_file.stream, f"datasets/{fname}")
-                assignment.dataset_filename = fname
-            else:
-                flash("Dataset must be a CSV file.", "warning")
+        _save_assignment_files(assignment)
 
         gt_file = request.files.get("ground_truth_file")
         if gt_file and gt_file.filename:
@@ -474,12 +468,16 @@ def edit_assignment(assignment_id: int):
         else:
             assignment.profit_matrix_config = None
 
-        dataset_file = request.files.get("dataset_file")
-        if dataset_file and dataset_file.filename:
-            if _allowed_file(dataset_file.filename):
-                fname = f"assignment_{assignment.id}_{uuid.uuid4().hex}_dataset.csv"
-                storage.upload_fileobj(dataset_file.stream, f"datasets/{fname}")
-                assignment.dataset_filename = fname
+        # Delete files marked for removal
+        delete_ids = request.form.getlist("delete_file_ids")
+        if delete_ids:
+            AssignmentFile.query.filter(
+                AssignmentFile.id.in_([int(i) for i in delete_ids if i.isdigit()]),
+                AssignmentFile.assignment_id == assignment.id,
+            ).delete(synchronize_session=False)
+
+        # Add new uploaded files
+        _save_assignment_files(assignment)
 
         gt_file = request.files.get("ground_truth_file")
         if gt_file and gt_file.filename:
@@ -492,10 +490,12 @@ def edit_assignment(assignment_id: int):
         flash("Assignment updated.", "success")
         return redirect(url_for("instructor.assignments"))
 
+    existing_files = assignment.files.all()
     return render_template(
         "instructor/edit_assignment.html",
         assignment=assignment,
         metric_choices=METRIC_CHOICES,
+        existing_files=existing_files,
     )
 
 
@@ -803,6 +803,30 @@ def _allowed_file(filename: str) -> bool:
         "." in filename
         and filename.rsplit(".", 1)[1].lower() in {"csv"}
     )
+
+
+def _save_assignment_files(assignment: Assignment) -> None:
+    """Upload any new dataset files from the current request and create AssignmentFile rows."""
+    uploaded_files = request.files.getlist("new_files")
+    display_names = request.form.getlist("new_display_names")
+
+    for i, f in enumerate(uploaded_files):
+        if not f or not f.filename:
+            continue
+        if not _allowed_file(f.filename):
+            flash(f"Skipped '{f.filename}': only CSV files are accepted.", "warning")
+            continue
+        name = (display_names[i].strip() if i < len(display_names) else "").strip()
+        if not name:
+            # Default display name: original filename without extension
+            name = f.filename.rsplit(".", 1)[0] if "." in f.filename else f.filename
+        r2_key = f"datasets/{assignment.id}/{uuid.uuid4().hex}_{f.filename}"
+        storage.upload_fileobj(f.stream, r2_key)
+        db.session.add(AssignmentFile(
+            assignment_id=assignment.id,
+            display_name=name,
+            r2_key=r2_key,
+        ))
 
 
 def _best_submission_for_section(user_id: int, assignment_id: int, section_id: int, assignment: Assignment):
