@@ -15,7 +15,7 @@ from flask_login import current_user, login_required
 
 from models import Assignment, Enrollment, Section, Submission, db
 from utils import storage
-from utils.scoring import score_from_streams
+from utils.scoring import score_from_streams, score_profit_matrix
 
 from . import student_bp
 
@@ -190,19 +190,39 @@ def assignment_detail(section_id: int, assignment_id: int):
         storage.upload_fileobj(io.BytesIO(file_bytes), r2_key)
 
         # Score the submission
+        import json as _json
         score = None
+        score_detail_json = None
         error_message = None
+
         if assignment.ground_truth_filename and assignment.target_column:
             try:
                 gt_bytes = storage.download_as_bytes(
                     f"ground_truth/{assignment.ground_truth_filename}"
                 )
-                score = score_from_streams(
-                    file_bytes,
-                    gt_bytes,
-                    assignment.scoring_metric,
-                    assignment.target_column,
-                )
+                if assignment.scoring_metric == "profit_matrix":
+                    detail = score_profit_matrix(
+                        file_bytes,
+                        gt_bytes,
+                        assignment.target_column,
+                        assignment.profit_matrix_cfg,
+                    )
+                    score = detail["total_profit"]
+                    score_detail_json = _json.dumps(detail)
+                    if detail["constraint_violated"]:
+                        flash(
+                            f"Warning: {detail['constraint_name']} "
+                            f"(${detail['marketing_expenditure']:,.0f}) exceeds the "
+                            f"${detail['constraint_limit']:,.0f} limit.",
+                            "warning",
+                        )
+                else:
+                    score = score_from_streams(
+                        file_bytes,
+                        gt_bytes,
+                        assignment.scoring_metric,
+                        assignment.target_column,
+                    )
             except Exception as exc:
                 error_message = str(exc)
                 current_app.logger.warning(
@@ -223,16 +243,23 @@ def assignment_detail(section_id: int, assignment_id: int):
             filename=rel_filename,
             score=score,
             error_message=error_message,
+            score_detail=score_detail_json,
         )
         db.session.add(submission)
         db.session.commit()
 
         if score is not None:
-            flash(
-                f"Submission received! Your score: "
-                f"<strong>{score:.4f}</strong> ({assignment.scoring_metric.upper()})",
-                "success",
-            )
+            if assignment.scoring_metric == "profit_matrix":
+                flash(
+                    f"Submission received! Total Profit: <strong>${score:,.2f}</strong>",
+                    "success",
+                )
+            else:
+                flash(
+                    f"Submission received! Your score: "
+                    f"<strong>{score:.4f}</strong> ({assignment.scoring_metric.upper()})",
+                    "success",
+                )
         elif error_message:
             flash(f"Submission saved, but scoring failed: {error_message}", "warning")
         else:
@@ -311,14 +338,14 @@ def leaderboard(section_id: int, assignment_id: int):
     for uid in user_ids:
         user = User.query.get(uid)
         best = _best_submission(uid, assignment)
-        board.append(
-            {
-                "alias": user.display_name,
-                "score": best.score if best else None,
-                "submitted_at": best.submitted_at if best else None,
-                "is_me": uid == current_user.id,
-            }
-        )
+        entry = {
+            "alias": user.display_name,
+            "score": best.score if best else None,
+            "submitted_at": best.submitted_at if best else None,
+            "is_me": uid == current_user.id,
+            "detail": best.detail if best else {},
+        }
+        board.append(entry)
 
     # Sort: None scores go to the bottom
     reverse = assignment.higher_is_better

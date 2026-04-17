@@ -61,6 +61,56 @@
         </div>
       </div>
 
+      <!-- Profit Matrix config -->
+      {% set pm = assignment.profit_matrix_cfg %}
+      <div id="profit-matrix-config" class="card border-warning mb-3"
+           style="display:{{ 'block' if assignment.scoring_metric == 'profit_matrix' else 'none' }};">
+        <div class="card-header bg-warning bg-opacity-10 fw-semibold">
+          Profit Matrix Configuration
+        </div>
+        <div class="card-body">
+          <div class="row g-3 mb-3">
+            <div class="col-sm-3">
+              <label class="form-label">True Positive Value ($)</label>
+              <input type="number" class="form-control" name="pm_tp"
+                     value="{{ pm.tp }}" step="any" />
+            </div>
+            <div class="col-sm-3">
+              <label class="form-label">False Positive Value ($)</label>
+              <input type="number" class="form-control" name="pm_fp"
+                     value="{{ pm.fp }}" step="any" />
+            </div>
+            <div class="col-sm-3">
+              <label class="form-label">True Negative Value ($)</label>
+              <input type="number" class="form-control" name="pm_tn"
+                     value="{{ pm.tn }}" step="any" />
+            </div>
+            <div class="col-sm-3">
+              <label class="form-label">False Negative Value ($)</label>
+              <input type="number" class="form-control" name="pm_fn"
+                     value="{{ pm.fn }}" step="any" />
+            </div>
+          </div>
+          <div class="row g-3">
+            <div class="col-sm-4">
+              <label class="form-label">Marketing Cost per Positive ($)</label>
+              <input type="number" class="form-control" name="pm_mktg_cost"
+                     value="{{ pm.marketing_cost_per_positive }}" step="any" />
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label">Budget Constraint Name</label>
+              <input type="text" class="form-control" name="pm_constraint_name"
+                     value="{{ pm.constraint_name }}" />
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label">Budget Limit ($)</label>
+              <input type="number" class="form-control" name="pm_constraint_limit"
+                     value="{{ pm.constraint_limit }}" step="any" />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="row g-3 mb-3">
         <div class="col-md-6">
           <label class="form-label fw-semibold">Replace Dataset CSV</label>
@@ -96,4 +146,13 @@
     </form>
   </div>
 </div>
+
+<script>
+  const metricSelect = document.querySelector('select[name="scoring_metric"]');
+  const pmConfig = document.getElementById('profit-matrix-config');
+  function togglePM() {
+    pmConfig.style.display = metricSelect.value === 'profit_matrix' ? '' : 'none';
+  }
+  metricSelect.addEventListener('change', togglePM);
+</script>
 {% endblock %}

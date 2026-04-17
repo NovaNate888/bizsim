@@ -25,47 +25,119 @@
 </div>
 
 {% if board %}
-  <div class="table-responsive">
-    <table class="table table-hover align-middle">
-      <thead class="table-light">
-        <tr>
-          <th width="80">Rank</th>
-          <th>Alias</th>
-          <th>Email</th>
-          <th>Best Score</th>
-          <th>Total Submissions</th>
-          <th>Last Submission</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for entry in board %}
+  {% if assignment.scoring_metric == 'profit_matrix' %}
+    {# ── Profit matrix leaderboard ── #}
+    {% set cfg = assignment.profit_matrix_cfg %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle small">
+        <thead class="table-light">
           <tr>
-            <td>
-              {% if entry.rank == 1 %}🥇
-              {% elif entry.rank == 2 %}🥈
-              {% elif entry.rank == 3 %}🥉
-              {% else %}{{ entry.rank }}{% endif %}
-            </td>
-            <td class="fw-semibold">{{ entry.alias }}</td>
-            <td class="text-muted small">{{ entry.email }}</td>
-            <td>
-              {% if entry.score is not none %}
-                {{ "%.4f"|format(entry.score) }}
-              {% else %}
-                <span class="text-muted">—</span>
-              {% endif %}
-            </td>
-            <td>{{ entry.total_submissions }}</td>
-            <td class="text-muted small">
-              {% if entry.submitted_at %}
-                {{ entry.submitted_at.strftime('%b %d, %Y %I:%M %p') }}
-              {% else %}—{% endif %}
-            </td>
+            <th>Rank</th>
+            <th>Alias</th>
+            <th>Email</th>
+            <th>TP</th>
+            <th>FP</th>
+            <th>TN</th>
+            <th>FN</th>
+            <th>Misclass Rate</th>
+            <th>Houses Marketed</th>
+            <th>Revenue</th>
+            <th>{{ cfg.constraint_name }}</th>
+            <th>Total Profit</th>
+            <th>Profit / Row</th>
+            <th>Submissions</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+        </thead>
+        <tbody>
+          {% for entry in board %}
+            {% set d = entry.detail %}
+            <tr>
+              <td>
+                {% if entry.rank == 1 %}🥇
+                {% elif entry.rank == 2 %}🥈
+                {% elif entry.rank == 3 %}🥉
+                {% else %}{{ entry.rank }}{% endif %}
+              </td>
+              <td class="fw-semibold">{{ entry.alias }}</td>
+              <td class="text-muted">{{ entry.email }}</td>
+              {% if d %}
+                <td>{{ d.tp }}</td>
+                <td>{{ d.fp }}</td>
+                <td>{{ d.tn }}</td>
+                <td>{{ d.fn }}</td>
+                <td>{{ "%.2f%%"|format(d.misclassification_rate * 100) }}</td>
+                <td>{{ d.houses_marketed }}</td>
+                <td>${{ "{:,.0f}".format(d.revenue) }}</td>
+                <td class="{% if d.constraint_violated %}text-danger fw-semibold{% endif %}">
+                  ${{ "{:,.0f}".format(d.marketing_expenditure) }}
+                  {% if d.constraint_violated %}
+                    <i class="bi bi-exclamation-triangle" title="Exceeds ${{ "{:,.0f}".format(cfg.constraint_limit) }} limit"></i>
+                  {% endif %}
+                </td>
+                <td class="fw-semibold {% if d.total_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                  ${{ "{:,.0f}".format(d.total_profit) }}
+                </td>
+                <td>${{ "{:,.2f}".format(d.profit_per_row) }}</td>
+              {% else %}
+                <td colspan="10" class="text-muted">—</td>
+              {% endif %}
+              <td>{{ entry.total_submissions }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted small mt-2">
+      Budget constraint: {{ cfg.constraint_name }} &le; ${{ "{:,.0f}".format(cfg.constraint_limit) }}
+      &nbsp;|&nbsp; TP=${{ cfg.tp }}, FP=${{ cfg.fp }}, TN=${{ cfg.tn }}, FN=${{ cfg.fn }}
+      &nbsp;|&nbsp; Marketing cost per positive: ${{ cfg.marketing_cost_per_positive }}
+    </p>
+
+  {% else %}
+    {# ── Standard leaderboard ── #}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead class="table-light">
+          <tr>
+            <th width="80">Rank</th>
+            <th>Alias</th>
+            <th>Email</th>
+            <th>Best Score</th>
+            <th>Total Submissions</th>
+            <th>Last Submission</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in board %}
+            <tr>
+              <td>
+                {% if entry.rank == 1 %}🥇
+                {% elif entry.rank == 2 %}🥈
+                {% elif entry.rank == 3 %}🥉
+                {% else %}{{ entry.rank }}{% endif %}
+              </td>
+              <td class="fw-semibold">{{ entry.alias }}</td>
+              <td class="text-muted small">{{ entry.email }}</td>
+              <td>
+                {% if entry.score is not none %}
+                  {{ "%.4f"|format(entry.score) }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>{{ entry.total_submissions }}</td>
+              <td class="text-muted small">
+                {% if entry.submitted_at %}
+                  {{ entry.submitted_at.strftime('%b %d, %Y %I:%M %p') }}
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
 {% else %}
   <div class="alert alert-info">No submissions yet.</div>
 {% endif %}

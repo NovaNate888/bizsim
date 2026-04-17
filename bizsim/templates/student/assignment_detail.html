@@ -90,8 +90,33 @@
       <div class="card shadow-sm border-0 mb-4 border-start border-4 border-primary">
         <div class="card-body text-center">
           <p class="text-muted mb-1 small">Your Best Score</p>
-          <h1 class="display-5 fw-bold text-primary">{{ "%.4f"|format(best.score) }}</h1>
-          <p class="text-muted small mb-0">{{ assignment.scoring_metric.upper() }}</p>
+          {% if assignment.scoring_metric == 'profit_matrix' %}
+            <h1 class="display-5 fw-bold {% if best.score >= 0 %}text-success{% else %}text-danger{% endif %}">
+              ${{ "{:,.0f}".format(best.score) }}
+            </h1>
+            <p class="text-muted small mb-0">Total Profit</p>
+            {% set d = best.detail %}
+            {% if d %}
+              <div class="mt-2 text-start small text-muted">
+                <div class="row text-center g-1 mt-1">
+                  <div class="col-3"><strong>{{ d.tp }}</strong><br>TP</div>
+                  <div class="col-3"><strong>{{ d.fp }}</strong><br>FP</div>
+                  <div class="col-3"><strong>{{ d.tn }}</strong><br>TN</div>
+                  <div class="col-3"><strong>{{ d.fn }}</strong><br>FN</div>
+                </div>
+                {% if d.constraint_violated %}
+                  <div class="alert alert-warning py-1 mt-2 mb-0 small">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    {{ d.constraint_name }} (${{ "{:,.0f}".format(d.marketing_expenditure) }})
+                    exceeds the ${{ "{:,.0f}".format(d.constraint_limit) }} limit.
+                  </div>
+                {% endif %}
+              </div>
+            {% endif %}
+          {% else %}
+            <h1 class="display-5 fw-bold text-primary">{{ "%.4f"|format(best.score) }}</h1>
+            <p class="text-muted small mb-0">{{ assignment.scoring_metric.upper() }}</p>
+          {% endif %}
         </div>
       </div>
     {% endif %}
@@ -111,7 +136,13 @@
               <thead class="table-light">
                 <tr>
                   <th>#</th>
-                  <th>Score</th>
+                  {% if assignment.scoring_metric == 'profit_matrix' %}
+                    <th>Total Profit</th>
+                    <th>TP / FP</th>
+                    <th>Budget OK?</th>
+                  {% else %}
+                    <th>Score</th>
+                  {% endif %}
                   <th>Submitted</th>
                 </tr>
               </thead>
@@ -119,17 +150,46 @@
                 {% for sub in history %}
                   <tr class="{% if best and sub.id == best.id %}table-primary{% endif %}">
                     <td class="text-muted">{{ loop.revindex }}</td>
-                    <td>
-                      {% if sub.score is not none %}
-                        <strong>{{ "%.4f"|format(sub.score) }}</strong>
-                      {% elif sub.error_message %}
-                        <span class="text-danger small" title="{{ sub.error_message }}">
-                          Error <i class="bi bi-exclamation-circle"></i>
-                        </span>
-                      {% else %}
-                        <span class="text-muted">—</span>
-                      {% endif %}
-                    </td>
+                    {% if assignment.scoring_metric == 'profit_matrix' %}
+                      {% set d = sub.detail %}
+                      <td>
+                        {% if sub.score is not none %}
+                          <strong class="{% if sub.score >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            ${{ "{:,.0f}".format(sub.score) }}
+                          </strong>
+                        {% elif sub.error_message %}
+                          <span class="text-danger small" title="{{ sub.error_message }}">
+                            Error <i class="bi bi-exclamation-circle"></i>
+                          </span>
+                        {% else %}
+                          <span class="text-muted">—</span>
+                        {% endif %}
+                      </td>
+                      <td class="small text-muted">
+                        {% if d %}{{ d.tp }} / {{ d.fp }}{% else %}—{% endif %}
+                      </td>
+                      <td>
+                        {% if d %}
+                          {% if d.constraint_violated %}
+                            <span class="badge bg-danger">Over budget</span>
+                          {% else %}
+                            <span class="badge bg-success">OK</span>
+                          {% endif %}
+                        {% else %}—{% endif %}
+                      </td>
+                    {% else %}
+                      <td>
+                        {% if sub.score is not none %}
+                          <strong>{{ "%.4f"|format(sub.score) }}</strong>
+                        {% elif sub.error_message %}
+                          <span class="text-danger small" title="{{ sub.error_message }}">
+                            Error <i class="bi bi-exclamation-circle"></i>
+                          </span>
+                        {% else %}
+                          <span class="text-muted">—</span>
+                        {% endif %}
+                      </td>
+                    {% endif %}
                     <td class="text-muted small">
                       {{ sub.submitted_at.strftime('%m/%d %I:%M %p') }}
                     </td>

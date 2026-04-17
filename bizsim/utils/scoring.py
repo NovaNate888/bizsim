@@ -142,6 +142,75 @@ def score_submission(
         raise ValueError(f"Unknown scoring metric: '{metric}'")
 
 
+def score_profit_matrix(
+    submission_bytes: bytes,
+    ground_truth_bytes: bytes,
+    target_col: str,
+    config: dict,
+) -> dict:
+    """
+    Score a binary classification submission using a profit matrix.
+
+    config keys:
+      tp, fp, tn, fn                  — per-unit net profit values
+      marketing_cost_per_positive     — cost per house marketed (TP or FP)
+      constraint_name                 — display name for the budget constraint
+      constraint_limit                — maximum allowed marketing expenditure
+
+    Returns a dict with full breakdown (tp, fp, tn, fn, total_profit, …).
+    """
+    gt = pd.read_csv(io.BytesIO(ground_truth_bytes))
+    sub = pd.read_csv(io.BytesIO(submission_bytes))
+
+    if target_col not in gt.columns:
+        raise ValueError(
+            f"Target column '{target_col}' not found in ground truth CSV. "
+            f"Available columns: {list(gt.columns)}"
+        )
+
+    y_true, y_pred = _coerce_predictions(gt, sub, target_col)
+    y_true_i = y_true.round().astype(int)
+    y_pred_i = y_pred.round().astype(int)
+
+    tp = int(np.sum((y_true_i == 1) & (y_pred_i == 1)))
+    fp = int(np.sum((y_true_i == 0) & (y_pred_i == 1)))
+    tn = int(np.sum((y_true_i == 0) & (y_pred_i == 0)))
+    fn = int(np.sum((y_true_i == 1) & (y_pred_i == 0)))
+    total_rows = len(y_true_i)
+
+    tp_val = config.get("tp", 1250)
+    fp_val = config.get("fp", -250)
+    tn_val = config.get("tn", 0)
+    fn_val = config.get("fn", 0)
+    mktg_cost = config.get("marketing_cost_per_positive", 250)
+
+    total_profit = tp * tp_val + fp * fp_val + tn * tn_val + fn * fn_val
+    houses_marketed = tp + fp
+    marketing_expenditure = mktg_cost * houses_marketed
+    # Revenue = gross return per TP = net profit per TP + marketing cost per TP
+    revenue = (tp_val + mktg_cost) * tp
+    misclassification_rate = (fp + fn) / total_rows if total_rows else 0.0
+    profit_per_row = total_profit / total_rows if total_rows else 0.0
+    constraint_limit = config.get("constraint_limit", 150000)
+
+    return {
+        "tp": tp,
+        "fp": fp,
+        "tn": tn,
+        "fn": fn,
+        "total_rows": total_rows,
+        "total_profit": total_profit,
+        "houses_marketed": houses_marketed,
+        "marketing_expenditure": marketing_expenditure,
+        "revenue": revenue,
+        "misclassification_rate": misclassification_rate,
+        "profit_per_row": profit_per_row,
+        "constraint_violated": marketing_expenditure > constraint_limit,
+        "constraint_name": config.get("constraint_name", "Marketing Expenditure"),
+        "constraint_limit": constraint_limit,
+    }
+
+
 def score_from_streams(
     submission_bytes: bytes,
     ground_truth_bytes: bytes,

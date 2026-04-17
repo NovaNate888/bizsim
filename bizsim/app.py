@@ -25,6 +25,7 @@ def create_app(config_name: str | None = None) -> Flask:
 
     with app.app_context():
         db.create_all()
+        _run_schema_migrations(db)
         _seed_admin(app)
 
     # Flask-Login
@@ -80,6 +81,21 @@ def create_app(config_name: str | None = None) -> Flask:
         print("Database initialised.")
 
     return app
+
+
+def _run_schema_migrations(db) -> None:
+    """Add columns introduced after initial db.create_all() without Flask-Migrate."""
+    from sqlalchemy import text
+    new_columns = [
+        "ALTER TABLE assignments ADD COLUMN profit_matrix_config TEXT",
+        "ALTER TABLE submissions ADD COLUMN score_detail TEXT",
+    ]
+    for sql in new_columns:
+        try:
+            db.session.execute(text(sql))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 def _seed_admin(app: Flask) -> None:

@@ -178,6 +178,7 @@ SCORING_METRICS = [
     ("f1", "F1 Score (higher is better)"),
     ("auc", "AUC-ROC (higher is better)"),
     ("r2", "R² Score (higher is better)"),
+    ("profit_matrix", "Profit Matrix (higher is better)"),
 ]
 
 METRIC_CHOICES = [(m[0], m[1]) for m in SCORING_METRICS]
@@ -190,21 +191,23 @@ class Assignment(db.Model):
     section_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=False)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
-    dataset_filename = db.Column(db.String(255), nullable=True)   # stored under DATASET_FOLDER
-    ground_truth_filename = db.Column(db.String(255), nullable=True)  # stored under GROUND_TRUTH_FOLDER
+    dataset_filename = db.Column(db.String(255), nullable=True)
+    ground_truth_filename = db.Column(db.String(255), nullable=True)
     scoring_metric = db.Column(db.String(32), nullable=False, default="rmse")
-    target_column = db.Column(db.String(128), nullable=True)  # column name in ground truth
+    target_column = db.Column(db.String(128), nullable=True)
     max_submissions_per_day = db.Column(db.Integer, default=3, nullable=False)
     due_date = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    # JSON-encoded profit matrix configuration (only used when scoring_metric == "profit_matrix")
+    profit_matrix_config = db.Column(db.Text, nullable=True)
 
     section = db.relationship("Section", back_populates="assignments")
     submissions = db.relationship("Submission", back_populates="assignment", lazy="dynamic")
 
     @property
     def higher_is_better(self) -> bool:
-        return self.scoring_metric in ("accuracy", "f1", "auc", "r2")
+        return self.scoring_metric in ("accuracy", "f1", "auc", "r2", "profit_matrix")
 
     @property
     def metric_label(self) -> str:
@@ -212,6 +215,22 @@ class Assignment(db.Model):
             if key == self.scoring_metric:
                 return label
         return self.scoring_metric.upper()
+
+    @property
+    def profit_matrix_cfg(self) -> dict:
+        """Parsed profit matrix config, or defaults."""
+        import json
+        if self.profit_matrix_config:
+            try:
+                return json.loads(self.profit_matrix_config)
+            except (ValueError, TypeError):
+                pass
+        return {
+            "tp": 1250, "fp": -250, "tn": 0, "fn": 0,
+            "marketing_cost_per_positive": 250,
+            "constraint_name": "Marketing Expenditure",
+            "constraint_limit": 150000,
+        }
 
     def is_past_due(self) -> bool:
         if self.due_date is None:
@@ -232,10 +251,22 @@ class Submission(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     assignment_id = db.Column(db.Integer, db.ForeignKey("assignments.id"), nullable=False)
-    filename = db.Column(db.String(255), nullable=False)   # stored path under UPLOAD_FOLDER
-    score = db.Column(db.Float, nullable=True)             # None if scoring failed
-    error_message = db.Column(db.Text, nullable=True)      # scoring error, if any
+    filename = db.Column(db.String(255), nullable=False)
+    score = db.Column(db.Float, nullable=True)         # primary score for ranking
+    error_message = db.Column(db.Text, nullable=True)  # scoring error, if any
+    score_detail = db.Column(db.Text, nullable=True)   # JSON breakdown (profit_matrix etc.)
     submitted_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    @property
+    def detail(self) -> dict:
+        """Parsed score_detail JSON, or empty dict."""
+        import json
+        if self.score_detail:
+            try:
+                return json.loads(self.score_detail)
+            except (ValueError, TypeError):
+                pass
+        return {}
 
     user = db.relationship("User", back_populates="submissions")
     assignment = db.relationship("Assignment", back_populates="submissions")

@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import uuid
 from datetime import datetime
@@ -302,6 +303,18 @@ def new_assignment(section_id: int):
                 metric_choices=METRIC_CHOICES,
             )
 
+        pm_config = None
+        if metric == "profit_matrix":
+            pm_config = json.dumps({
+                "tp": request.form.get("pm_tp", type=float, default=1250),
+                "fp": request.form.get("pm_fp", type=float, default=-250),
+                "tn": request.form.get("pm_tn", type=float, default=0),
+                "fn": request.form.get("pm_fn", type=float, default=0),
+                "marketing_cost_per_positive": request.form.get("pm_mktg_cost", type=float, default=250),
+                "constraint_name": request.form.get("pm_constraint_name", "Marketing Expenditure").strip(),
+                "constraint_limit": request.form.get("pm_constraint_limit", type=float, default=150000),
+            })
+
         assignment = Assignment(
             section_id=section_id,
             title=title,
@@ -310,6 +323,7 @@ def new_assignment(section_id: int):
             target_column=target_col or None,
             max_submissions_per_day=max_subs,
             due_date=due_date,
+            profit_matrix_config=pm_config,
         )
         db.session.add(assignment)
         db.session.flush()
@@ -379,6 +393,19 @@ def edit_assignment(assignment_id: int):
             assignment.due_date = None
 
         assignment.is_active = bool(request.form.get("is_active"))
+
+        if assignment.scoring_metric == "profit_matrix":
+            assignment.profit_matrix_config = json.dumps({
+                "tp": request.form.get("pm_tp", type=float, default=1250),
+                "fp": request.form.get("pm_fp", type=float, default=-250),
+                "tn": request.form.get("pm_tn", type=float, default=0),
+                "fn": request.form.get("pm_fn", type=float, default=0),
+                "marketing_cost_per_positive": request.form.get("pm_mktg_cost", type=float, default=250),
+                "constraint_name": request.form.get("pm_constraint_name", "Marketing Expenditure").strip(),
+                "constraint_limit": request.form.get("pm_constraint_limit", type=float, default=150000),
+            })
+        else:
+            assignment.profit_matrix_config = None
 
         # Handle new dataset upload
         dataset_file = request.files.get("dataset_file")
@@ -466,6 +493,7 @@ def leaderboard(assignment_id: int):
                 "score": best.score if best else None,
                 "submitted_at": best.submitted_at if best else None,
                 "total_submissions": all_subs,
+                "detail": best.detail if best else {},
             }
         )
 
