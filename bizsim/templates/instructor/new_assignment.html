@@ -5,16 +5,15 @@
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{{ url_for('instructor.dashboard') }}">Dashboard</a></li>
-    <li class="breadcrumb-item">
-      <a href="{{ url_for('instructor.section_detail', section_id=section.id) }}">
-        {{ section.course.display_name }} — §{{ section.section_name }}
-      </a>
-    </li>
+    <li class="breadcrumb-item"><a href="{{ url_for('instructor.assignments') }}">Assignments</a></li>
     <li class="breadcrumb-item active">New Assignment</li>
   </ol>
 </nav>
 
-<h2 class="fw-bold mb-4">Create Assignment</h2>
+<h2 class="fw-bold mb-1">Create Assignment</h2>
+<p class="text-muted mb-4">
+  Assignments live in your pool and can be linked to one or more courses.
+</p>
 
 <div class="card shadow-sm border-0">
   <div class="card-body">
@@ -27,7 +26,7 @@
         </div>
         <div class="col-md-4">
           <label class="form-label fw-semibold">Scoring Metric <span class="text-danger">*</span></label>
-          <select class="form-select" name="scoring_metric" required>
+          <select class="form-select" name="scoring_metric" id="scoring-metric" required>
             {% for value, label in metric_choices %}
               <option value="{{ value }}">{{ label }}</option>
             {% endfor %}
@@ -43,9 +42,9 @@
 
       <div class="row g-3 mb-3">
         <div class="col-md-4">
-          <label class="form-label fw-semibold">Target Column Name <span class="text-danger">*</span></label>
+          <label class="form-label fw-semibold">Target Column Name</label>
           <input type="text" class="form-control" name="target_column"
-                 placeholder="e.g. WarmLead" required />
+                 placeholder="e.g. WarmLead" />
           <div class="form-text">Column in ground truth CSV to score against.</div>
         </div>
         <div class="col-md-4">
@@ -59,7 +58,7 @@
         </div>
       </div>
 
-      <!-- Profit Matrix config (shown only when metric = profit_matrix) -->
+      <!-- Profit Matrix config -->
       <div id="profit-matrix-config" class="card border-warning mb-4" style="display:none;">
         <div class="card-header bg-warning bg-opacity-10 fw-semibold">
           Profit Matrix Configuration
@@ -109,7 +108,7 @@
           <input type="file" class="form-control" name="dataset_file" accept=".csv" />
         </div>
         <div class="col-md-6">
-          <label class="form-label fw-semibold">Ground Truth CSV <span class="text-danger">*</span></label>
+          <label class="form-label fw-semibold">Ground Truth CSV</label>
           <input type="file" class="form-control" name="ground_truth_file" accept=".csv" />
           <div class="form-text">This file is never shown to students.</div>
         </div>
@@ -119,15 +118,14 @@
         <button type="submit" class="btn btn-success fw-semibold">
           <i class="bi bi-check2-circle me-1"></i>Create Assignment
         </button>
-        <a href="{{ url_for('instructor.section_detail', section_id=section.id) }}"
-           class="btn btn-outline-secondary">Cancel</a>
+        <a href="{{ url_for('instructor.assignments') }}" class="btn btn-outline-secondary">Cancel</a>
       </div>
     </form>
   </div>
 </div>
 
 <script>
-  const metricSelect = document.querySelector('select[name="scoring_metric"]');
+  const metricSelect = document.getElementById('scoring-metric');
   const pmConfig = document.getElementById('profit-matrix-config');
   function togglePM() {
     pmConfig.style.display = metricSelect.value === 'profit_matrix' ? '' : 'none';

@@ -5,11 +5,7 @@
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{{ url_for('instructor.dashboard') }}">Dashboard</a></li>
-    <li class="breadcrumb-item">
-      <a href="{{ url_for('instructor.section_detail', section_id=assignment.section_id) }}">
-        {{ assignment.section.course.display_name }} — §{{ assignment.section.section_name }}
-      </a>
-    </li>
+    <li class="breadcrumb-item"><a href="{{ url_for('instructor.assignments') }}">Assignments</a></li>
     <li class="breadcrumb-item active">Edit Assignment</li>
   </ol>
 </nav>
@@ -140,7 +136,7 @@
         <button type="submit" class="btn btn-primary fw-semibold">
           <i class="bi bi-save me-1"></i>Save Changes
         </button>
-        <a href="{{ url_for('instructor.section_detail', section_id=assignment.section_id) }}"
+        <a href="{{ url_for('instructor.assignments') }}"
            class="btn btn-outline-secondary">Cancel</a>
       </div>
     </form>

@@ -54,9 +54,9 @@
                   </small>
                 </div>
                 <div class="d-flex gap-2">
-                  <a href="{{ url_for('instructor.sections', course_id=course.id) }}"
+                  <a href="{{ url_for('instructor.course_detail', course_id=course.id) }}"
                      class="btn btn-sm btn-outline-primary">
-                    <i class="bi bi-diagram-3 me-1"></i>Sections
+                    <i class="bi bi-diagram-3 me-1"></i>Manage
                   </a>
                   <form method="POST" class="d-inline">
                     <input type="hidden" name="action" value="toggle" />

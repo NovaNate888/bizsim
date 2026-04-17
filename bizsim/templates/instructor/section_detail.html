@@ -7,7 +7,7 @@
     <li class="breadcrumb-item"><a href="{{ url_for('instructor.dashboard') }}">Dashboard</a></li>
     <li class="breadcrumb-item"><a href="{{ url_for('instructor.courses') }}">Courses</a></li>
     <li class="breadcrumb-item">
-      <a href="{{ url_for('instructor.sections', course_id=section.course_id) }}">
+      <a href="{{ url_for('instructor.course_detail', course_id=section.course_id) }}">
         {{ section.course.display_name }}
       </a>
     </li>
@@ -22,21 +22,17 @@
     </h2>
     <p class="text-muted mb-0">{{ section.semester.name }}</p>
   </div>
-  <a href="{{ url_for('instructor.new_assignment', section_id=section.id) }}"
-     class="btn btn-primary">
-    <i class="bi bi-plus-circle me-1"></i>New Assignment
-  </a>
 </div>
 
 <div class="row g-4">
-  <!-- Students -->
+
+  {# ── Students ── #}
   <div class="col-lg-5">
     <div class="card shadow-sm border-0">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h6 class="mb-0"><i class="bi bi-people me-1"></i>Students ({{ enrollments | length }})</h6>
       </div>
       <div class="card-body pb-0">
-        <!-- Add student manually -->
         <form method="POST" action="{{ url_for('instructor.enroll_student', section_id=section.id) }}"
               class="mb-3">
           <div class="input-group input-group-sm">
@@ -52,8 +48,7 @@
         {% for enr in enrollments %}
           <div class="list-group-item d-flex justify-content-between align-items-center">
             <div>
-              <span class="fw-semibold">{{ enr.user.display_name }}</span>
-              <br />
+              <span class="fw-semibold">{{ enr.user.display_name }}</span><br />
               <small class="text-muted">{{ enr.user.email }}</small>
             </div>
             <form method="POST"
@@ -71,16 +66,49 @@
     </div>
   </div>
 
-  <!-- Assignments -->
+  {# ── Assignments ── #}
   <div class="col-lg-7">
     <div class="card shadow-sm border-0">
-      <div class="card-header"><h6 class="mb-0"><i class="bi bi-clipboard-check me-1"></i>Assignments</h6></div>
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-clipboard-check me-1"></i>Assignments</h6>
+        <small class="text-muted">Inherited from course + section overrides</small>
+      </div>
+
+      {# Section-only add (override) #}
+      {% if section_add_options %}
+        <div class="card-body border-bottom py-2">
+          <form method="POST"
+                action="{{ url_for('instructor.section_include_assignment', section_id=section.id, assignment_id=0) }}"
+                id="section-add-form"
+                class="d-flex gap-2 align-items-end">
+            <input type="hidden" name="override_action" value="add" />
+            <div class="flex-grow-1">
+              <label class="form-label small mb-1">Add assignment to this section only</label>
+              <select class="form-select form-select-sm" name="section_assignment_id" id="section-assignment-select">
+                <option value="">— Select —</option>
+                {% for a in section_add_options %}
+                  <option value="{{ a.id }}">{{ a.title }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-success" onclick="submitSectionAdd()">
+              <i class="bi bi-plus-lg me-1"></i>Add
+            </button>
+          </form>
+        </div>
+      {% endif %}
+
+      {# Effective assignments list #}
       <div class="list-group list-group-flush">
         {% for a in assignments %}
+          {% set is_override_add = a.id not in course_aid_set %}
           <div class="list-group-item d-flex justify-content-between align-items-center">
             <div>
               <span class="fw-semibold">{{ a.title }}</span>
               <span class="badge bg-secondary ms-2">{{ a.scoring_metric.upper() }}</span>
+              {% if is_override_add %}
+                <span class="badge bg-warning text-dark ms-1" title="Added for this section only">Section Only</span>
+              {% endif %}
               {% if not a.is_active %}
                 <span class="badge bg-danger ms-1">Inactive</span>
               {% endif %}
@@ -90,8 +118,8 @@
                 &bull; {{ a.submissions.count() }} submission(s)
               </small>
             </div>
-            <div class="d-flex gap-2">
-              <a href="{{ url_for('instructor.leaderboard', assignment_id=a.id) }}"
+            <div class="d-flex gap-2 flex-shrink-0">
+              <a href="{{ url_for('instructor.leaderboard', section_id=section.id, assignment_id=a.id) }}"
                  class="btn btn-sm btn-outline-warning">
                 <i class="bi bi-trophy"></i>
               </a>
@@ -99,16 +127,73 @@
                  class="btn btn-sm btn-outline-secondary">
                 <i class="bi bi-pencil"></i>
               </a>
+              {# Exclude / restore from section #}
+              <form method="POST"
+                    action="{{ url_for('instructor.section_exclude_assignment', section_id=section.id, assignment_id=a.id) }}"
+                    onsubmit="return confirm('Hide this assignment from this section?')">
+                <button type="submit" class="btn btn-sm btn-outline-danger"
+                        title="{% if is_override_add %}Remove section-only assignment{% else %}Hide from this section{% endif %}">
+                  <i class="bi bi-eye-slash"></i>
+                </button>
+              </form>
             </div>
           </div>
         {% else %}
           <div class="list-group-item text-muted">
-            No assignments yet.
-            <a href="{{ url_for('instructor.new_assignment', section_id=section.id) }}">Create one.</a>
+            No assignments.
+            <a href="{{ url_for('instructor.course_detail', course_id=section.course_id) }}">
+              Link assignments to the course first.
+            </a>
           </div>
         {% endfor %}
       </div>
+
+      {# Hidden/excluded assignments (with restore option) #}
+      {% set excluded_ids = overrides | selectattr('value', 'equalto', true) | map(attribute='key') | list %}
+      {# We iterate overrides dict directly #}
+      {% set excluded_items = [] %}
+      {% for aid, excl in overrides.items() %}
+        {% if excl %}{% set _ = excluded_items.append(aid) %}{% endif %}
+      {% endfor %}
+      {% if excluded_items %}
+        <div class="card-body border-top py-2">
+          <p class="small text-muted mb-2">Hidden from this section:</p>
+          {% for aid in excluded_items %}
+            {% set a = assignments | selectattr('id', 'equalto', aid) | first | default(none) %}
+            {# Look up the assignment separately if not in effective list #}
+            {% set hidden_a = namespace(obj=none) %}
+            {% for ca in section.course.course_assignments.all() %}
+              {% if ca.assignment_id == aid %}{% set hidden_a.obj = ca.assignment %}{% endif %}
+            {% endfor %}
+            {% if hidden_a.obj %}
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="small text-muted">{{ hidden_a.obj.title }}</span>
+                <form method="POST"
+                      action="{{ url_for('instructor.section_include_assignment', section_id=section.id, assignment_id=aid) }}">
+                  <input type="hidden" name="override_action" value="restore" />
+                  <button type="submit" class="btn btn-sm btn-outline-secondary py-0 px-2">
+                    Restore
+                  </button>
+                </form>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+
     </div>
   </div>
 </div>
+
+<script>
+function submitSectionAdd() {
+  const select = document.getElementById('section-assignment-select');
+  const aid = select.value;
+  if (!aid) { alert('Please select an assignment.'); return; }
+  const form = document.getElementById('section-add-form');
+  // Update action URL with real assignment_id
+  form.action = form.action.replace('/0/', '/' + aid + '/');
+  form.submit();
+}
+</script>
 {% endblock %}

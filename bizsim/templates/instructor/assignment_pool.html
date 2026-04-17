@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Assignment Pool{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h2 class="fw-bold mb-0">Assignment Pool</h2>
+    <p class="text-muted mb-0">Create reusable assignments, then link them to your courses.</p>
+  </div>
+  <a href="{{ url_for('instructor.new_assignment') }}" class="btn btn-primary">
+    <i class="bi bi-plus-circle me-1"></i>New Assignment
+  </a>
+</div>
+
+{% if assignments %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Title</th>
+          <th>Metric</th>
+          <th>Due Date</th>
+          <th>Linked Courses</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in assignments %}
+          <tr>
+            <td class="fw-semibold">{{ a.title }}</td>
+            <td><span class="badge bg-secondary">{{ a.scoring_metric.upper() }}</span></td>
+            <td>
+              {% if a.due_date %}
+                {{ a.due_date.strftime('%b %d, %Y') }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge bg-info text-dark">{{ a.linked_course_count() }} course(s)</span>
+            </td>
+            <td>
+              {% if a.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <a href="{{ url_for('instructor.edit_assignment', assignment_id=a.id) }}"
+                 class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-pencil me-1"></i>Edit
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="alert alert-info">
+    No assignments yet.
+    <a href="{{ url_for('instructor.new_assignment') }}">Create your first assignment.</a>
+  </div>
+{% endif %}
+{% endblock %}

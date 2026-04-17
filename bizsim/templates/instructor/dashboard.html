@@ -61,7 +61,7 @@
         <i class="bi bi-clipboard-check fs-2 text-warning me-3"></i>
         <div>
           <h6 class="mb-0 fw-bold">Assignments</h6>
-          <small class="text-muted">All assignments across sections</small>
+          <small class="text-muted">Create and manage your assignment pool</small>
         </div>
       </div>
     </a>
@@ -89,17 +89,24 @@
       <div class="col-md-6">
         <div class="card border-0 shadow-sm h-100">
           <div class="card-body">
-            <h6 class="fw-bold mb-1">{{ course.display_name }}</h6>
+            <div class="d-flex justify-content-between align-items-start mb-1">
+              <h6 class="fw-bold mb-0">{{ course.display_name }}</h6>
+              <a href="{{ url_for('instructor.course_detail', course_id=course.id) }}"
+                 class="btn btn-sm btn-outline-secondary py-0">
+                <i class="bi bi-gear"></i>
+              </a>
+            </div>
             {% set sections = course.sections.all() %}
-            <p class="text-muted small mb-2">{{ sections | length }} section(s)</p>
+            <p class="text-muted small mb-2">
+              {{ sections | length }} section(s) &bull;
+              {{ course.course_assignments.filter_by(is_active=True).count() }} assignment(s)
+            </p>
             <div class="d-flex gap-2 flex-wrap">
               {% for section in sections %}
                 <a href="{{ url_for('instructor.section_detail', section_id=section.id) }}"
                    class="btn btn-sm btn-outline-primary">
-                  Section {{ section.section_name }}
-                  <span class="badge bg-primary ms-1">
-                    {{ section.enrollments.count() }}
-                  </span>
+                  §{{ section.section_name }}
+                  <span class="badge bg-primary ms-1">{{ section.enrollments.count() }}</span>
                 </a>
               {% endfor %}
             </div>

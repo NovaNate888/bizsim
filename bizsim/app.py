@@ -87,8 +87,13 @@ def _run_schema_migrations(db) -> None:
     """Add columns introduced after initial db.create_all() without Flask-Migrate."""
     from sqlalchemy import text
     new_columns = [
+        # Phase 1: profit matrix
         "ALTER TABLE assignments ADD COLUMN profit_matrix_config TEXT",
         "ALTER TABLE submissions ADD COLUMN score_detail TEXT",
+        # Phase 2: assignment pool restructure
+        "ALTER TABLE assignments ADD COLUMN instructor_id INTEGER REFERENCES instructors(id)",
+        "ALTER TABLE assignments ALTER COLUMN section_id DROP NOT NULL",
+        "ALTER TABLE submissions ADD COLUMN section_id INTEGER REFERENCES sections(id)",
     ]
     for sql in new_columns:
         try:
@@ -96,6 +101,8 @@ def _run_schema_migrations(db) -> None:
             db.session.commit()
         except Exception:
             db.session.rollback()
+    # Ensure new tables exist (course_assignments, section_overrides)
+    db.create_all()
 
 
 def _seed_admin(app: Flask) -> None:

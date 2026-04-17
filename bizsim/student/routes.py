@@ -1,4 +1,5 @@
 import io
+import json as _json
 import uuid
 from datetime import datetime, timezone
 
@@ -33,10 +34,9 @@ def _allowed_file(filename: str) -> bool:
 
 
 def _get_enrollment_or_404(user_id: int, section_id: int) -> Enrollment:
-    enrollment = Enrollment.query.filter_by(
+    return Enrollment.query.filter_by(
         user_id=user_id, section_id=section_id
     ).first_or_404()
-    return enrollment
 
 
 def _require_verified(user):
@@ -44,6 +44,29 @@ def _require_verified(user):
         flash("Please verify your email before accessing this page.", "warning")
         return redirect(url_for("auth.login"))
     return None
+
+
+def _best_submission_for_section(user_id: int, assignment: Assignment, section_id: int):
+    """Return the best-scoring Submission for this user+assignment+section, or None.
+    Falls back to section_id=NULL rows for backward compatibility."""
+    subs = (
+        Submission.query
+        .filter_by(user_id=user_id, assignment_id=assignment.id, section_id=section_id)
+        .filter(Submission.score.isnot(None))
+        .all()
+    )
+    if not subs:
+        subs = (
+            Submission.query
+            .filter_by(user_id=user_id, assignment_id=assignment.id)
+            .filter(Submission.score.isnot(None), Submission.section_id.is_(None))
+            .all()
+        )
+    if not subs:
+        return None
+    if assignment.higher_is_better:
+        return max(subs, key=lambda s: s.score)
+    return min(subs, key=lambda s: s.score)
 
 
 # ---------------------------------------------------------------------------
@@ -57,19 +80,12 @@ def dashboard():
     if redir:
         return redir
 
-    # All sections the student is enrolled in
     enrollments = current_user.enrollments.all()
 
-    # For each enrollment, get open assignments and submission counts
     enrollment_data = []
     for enr in enrollments:
         section = enr.section
-        assignments = (
-            section.assignments
-            .filter_by(is_active=True)
-            .order_by(Assignment.due_date.asc().nullslast())
-            .all()
-        )
+        assignments = section.get_effective_assignments()
         sub_count = current_user.submissions.filter(
             Submission.assignment_id.in_([a.id for a in assignments])
         ).count()
@@ -94,22 +110,15 @@ def assignments(section_id: int):
     if redir:
         return redir
 
-    enrollment = Enrollment.query.filter_by(
-        user_id=current_user.id, section_id=section_id
-    ).first_or_404()
+    enrollment = _get_enrollment_or_404(current_user.id, section_id)
     section = enrollment.section
-    assignments_list = (
-        section.assignments
-        .filter_by(is_active=True)
-        .order_by(Assignment.due_date.asc().nullslast())
-        .all()
-    )
+    assignments_list = section.get_effective_assignments()
 
-    # Map assignment_id -> best score for current user
     best_scores = {}
     for assignment in assignments_list:
-        best = _best_submission(current_user.id, assignment)
-        best_scores[assignment.id] = best
+        best_scores[assignment.id] = _best_submission_for_section(
+            current_user.id, assignment, section_id
+        )
 
     return render_template(
         "student/assignments.html",
@@ -133,24 +142,27 @@ def assignment_detail(section_id: int, assignment_id: int):
     if redir:
         return redir
 
-    enrollment = Enrollment.query.filter_by(
-        user_id=current_user.id, section_id=section_id
-    ).first_or_404()
+    enrollment = _get_enrollment_or_404(current_user.id, section_id)
     section = enrollment.section
     assignment = Assignment.query.get_or_404(assignment_id)
 
-    if assignment.section_id != section_id:
+    # Verify this assignment is visible to this section
+    effective_ids = {a.id for a in section.get_effective_assignments()}
+    if assignment_id not in effective_ids:
         abort(404)
 
-    # Submission history for this user + assignment
     history = (
         Submission.query
-        .filter_by(user_id=current_user.id, assignment_id=assignment_id)
+        .filter(
+            Submission.user_id == current_user.id,
+            Submission.assignment_id == assignment_id,
+            Submission.section_id.in_([section_id, None]),
+        )
         .order_by(Submission.submitted_at.desc())
         .all()
     )
 
-    today_count = _submissions_today(current_user.id, assignment_id)
+    today_count = _submissions_today(current_user.id, assignment_id, section_id)
     can_submit = (
         not assignment.is_past_due()
         and today_count < assignment.max_submissions_per_day
@@ -183,14 +195,11 @@ def assignment_detail(section_id: int, assignment_id: int):
             flash("Only CSV files are accepted.", "danger")
             return redirect(request.url)
 
-        # Read file bytes once, then upload to R2
         file_bytes = file.read()
         unique_name = f"{uuid.uuid4().hex}.csv"
         r2_key = f"submissions/{assignment_id}/{current_user.id}/{unique_name}"
         storage.upload_fileobj(io.BytesIO(file_bytes), r2_key)
 
-        # Score the submission
-        import json as _json
         score = None
         score_detail_json = None
         error_message = None
@@ -234,13 +243,11 @@ def assignment_detail(section_id: int, assignment_id: int):
         else:
             error_message = "No ground truth configured; submission stored."
 
-        # R2 key stored in DB
-        rel_filename = r2_key
-
         submission = Submission(
             user_id=current_user.id,
             assignment_id=assignment_id,
-            filename=rel_filename,
+            section_id=section_id,
+            filename=r2_key,
             score=score,
             error_message=error_message,
             score_detail=score_detail_json,
@@ -273,7 +280,7 @@ def assignment_detail(section_id: int, assignment_id: int):
             )
         )
 
-    best = _best_submission(current_user.id, assignment)
+    best = _best_submission_for_section(current_user.id, assignment, section_id)
     return render_template(
         "student/assignment_detail.html",
         section=section,
@@ -294,10 +301,18 @@ def assignment_detail(section_id: int, assignment_id: int):
 def download_dataset(assignment_id: int):
     assignment = Assignment.query.get_or_404(assignment_id)
 
-    # Confirm student is enrolled in the assignment's section
-    enrollment = Enrollment.query.filter_by(
-        user_id=current_user.id, section_id=assignment.section_id
-    ).first_or_404()
+    # Confirm student is enrolled in a section that has this assignment
+    enrolled_section_ids = [
+        e.section_id for e in current_user.enrollments.all()
+    ]
+    has_access = False
+    for sid in enrolled_section_ids:
+        section = Section.query.get(sid)
+        if section and assignment_id in {a.id for a in section.get_effective_assignments()}:
+            has_access = True
+            break
+    if not has_access:
+        abort(403)
 
     if not assignment.dataset_filename:
         flash("No dataset has been uploaded for this assignment yet.", "warning")
@@ -318,36 +333,29 @@ def leaderboard(section_id: int, assignment_id: int):
     if redir:
         return redir
 
-    enrollment = Enrollment.query.filter_by(
-        user_id=current_user.id, section_id=section_id
-    ).first_or_404()
+    enrollment = _get_enrollment_or_404(current_user.id, section_id)
     assignment = Assignment.query.get_or_404(assignment_id)
 
-    if assignment.section_id != section_id:
+    effective_ids = {a.id for a in enrollment.section.get_effective_assignments()}
+    if assignment_id not in effective_ids:
         abort(404)
 
     section = enrollment.section
 
-    # Get all students enrolled in this section
     enrollments = Enrollment.query.filter_by(section_id=section_id).all()
-    user_ids = [e.user_id for e in enrollments]
-
-    # Get best score per student
     from models import User
     board = []
-    for uid in user_ids:
-        user = User.query.get(uid)
-        best = _best_submission(uid, assignment)
-        entry = {
+    for enr in enrollments:
+        user = User.query.get(enr.user_id)
+        best = _best_submission_for_section(user.id, assignment, section_id)
+        board.append({
             "alias": user.display_name,
             "score": best.score if best else None,
             "submitted_at": best.submitted_at if best else None,
-            "is_me": uid == current_user.id,
+            "is_me": enr.user_id == current_user.id,
             "detail": best.detail if best else {},
-        }
-        board.append(entry)
+        })
 
-    # Sort: None scores go to the bottom
     reverse = assignment.higher_is_better
     board.sort(
         key=lambda x: (
@@ -355,8 +363,6 @@ def leaderboard(section_id: int, assignment_id: int):
             (-x["score"] if x["score"] is not None and reverse else x["score"]) or 0,
         )
     )
-
-    # Assign ranks (ties share rank)
     _assign_ranks(board, reverse)
 
     return render_template(
@@ -371,22 +377,7 @@ def leaderboard(section_id: int, assignment_id: int):
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _best_submission(user_id: int, assignment: Assignment):
-    """Return the best-scoring Submission for this user+assignment, or None."""
-    subs = (
-        Submission.query
-        .filter_by(user_id=user_id, assignment_id=assignment.id)
-        .filter(Submission.score.isnot(None))
-        .all()
-    )
-    if not subs:
-        return None
-    if assignment.higher_is_better:
-        return max(subs, key=lambda s: s.score)
-    return min(subs, key=lambda s: s.score)
-
-
-def _submissions_today(user_id: int, assignment_id: int) -> int:
+def _submissions_today(user_id: int, assignment_id: int, section_id: int) -> int:
     today_start = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -395,6 +386,7 @@ def _submissions_today(user_id: int, assignment_id: int) -> int:
         .filter(
             Submission.user_id == user_id,
             Submission.assignment_id == assignment_id,
+            Submission.section_id.in_([section_id, None]),
             Submission.submitted_at >= today_start,
         )
         .count()

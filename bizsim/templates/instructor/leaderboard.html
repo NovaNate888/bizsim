@@ -6,8 +6,13 @@
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{{ url_for('instructor.dashboard') }}">Dashboard</a></li>
     <li class="breadcrumb-item">
+      <a href="{{ url_for('instructor.course_detail', course_id=section.course_id) }}">
+        {{ section.course.display_name }}
+      </a>
+    </li>
+    <li class="breadcrumb-item">
       <a href="{{ url_for('instructor.section_detail', section_id=section.id) }}">
-        {{ section.course.display_name }} — §{{ section.section_name }}
+        Section {{ section.section_name }}
       </a>
     </li>
     <li class="breadcrumb-item active">Leaderboard</li>

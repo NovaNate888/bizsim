@@ -15,15 +15,16 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
-from utils import storage
 
 from models import (
     Assignment,
     Course,
+    CourseAssignment,
     Enrollment,
     Instructor,
     METRIC_CHOICES,
     Section,
+    SectionOverride,
     Semester,
     Submission,
     User,
@@ -31,10 +32,11 @@ from models import (
 )
 
 from . import instructor_bp
+from utils import storage
 
 
 # ---------------------------------------------------------------------------
-# Access guard
+# Access guards
 # ---------------------------------------------------------------------------
 
 def instructor_required(f):
@@ -66,6 +68,23 @@ def _get_instructor_or_404() -> Instructor:
     return instr
 
 
+def _owns_assignment(instr: Instructor, assignment: Assignment) -> bool:
+    """True if this instructor created the assignment (or is admin)."""
+    if current_user.is_admin:
+        return True
+    return assignment.instructor_id == instr.id
+
+
+def _owns_course(instr: Instructor, course: Course) -> bool:
+    if current_user.is_admin:
+        return True
+    return course.instructor_id == instr.id
+
+
+def _owns_section(instr: Instructor, section: Section) -> bool:
+    return _owns_course(instr, section.course)
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
@@ -82,18 +101,16 @@ def dashboard():
         .join(Course)
         .filter(Course.instructor_id == instr.id)
         .count()
-        if instr
-        else 0
+        if instr else 0
     )
     total_submissions = (
         Submission.query
         .join(Assignment)
-        .join(Section)
-        .join(Course)
+        .join(CourseAssignment, CourseAssignment.assignment_id == Assignment.id)
+        .join(Course, Course.id == CourseAssignment.course_id)
         .filter(Course.instructor_id == instr.id)
         .count()
-        if instr
-        else 0
+        if instr else 0
     )
     return render_template(
         "instructor/dashboard.html",
@@ -173,7 +190,7 @@ def courses():
         elif action == "toggle":
             course_id = request.form.get("course_id", type=int)
             course = Course.query.get_or_404(course_id)
-            if course.instructor_id != instr.id:
+            if not _owns_course(instr, course):
                 abort(403)
             course.is_active = not course.is_active
             db.session.commit()
@@ -181,29 +198,27 @@ def courses():
 
         return redirect(url_for("instructor.courses"))
 
-    all_courses = (
-        instr.courses.order_by(Course.name.asc()).all() if instr else []
-    )
+    all_courses = instr.courses.order_by(Course.name.asc()).all() if instr else []
     return render_template("instructor/courses.html", courses=all_courses, instructor=instr)
 
 
 # ---------------------------------------------------------------------------
-# Sections
+# Course detail (sections + linked assignments)
 # ---------------------------------------------------------------------------
 
-@instructor_bp.route("/courses/<int:course_id>/sections", methods=["GET", "POST"])
+@instructor_bp.route("/course/<int:course_id>", methods=["GET", "POST"])
 @login_required
 @instructor_required
-def sections(course_id: int):
+def course_detail(course_id: int):
     instr = _get_instructor_or_404()
     course = Course.query.get_or_404(course_id)
-    if course.instructor_id != instr.id:
+    if not _owns_course(instr, course):
         abort(403)
 
     if request.method == "POST":
         action = request.form.get("action")
 
-        if action == "create":
+        if action == "create_section":
             semester_id = request.form.get("semester_id", type=int)
             section_name = request.form.get("section_name", "").strip()
             if not semester_id or not section_name:
@@ -218,14 +233,67 @@ def sections(course_id: int):
                 db.session.commit()
                 flash(f"Section '{section_name}' created.", "success")
 
-        elif action == "toggle":
+        elif action == "toggle_section":
             section_id = request.form.get("section_id", type=int)
             section = Section.query.get_or_404(section_id)
             section.is_active = not section.is_active
             db.session.commit()
             flash("Section status updated.", "info")
 
-        return redirect(url_for("instructor.sections", course_id=course_id))
+        elif action == "add_assignment":
+            assignment_id = request.form.get("assignment_id", type=int)
+            if assignment_id:
+                assignment = Assignment.query.get_or_404(assignment_id)
+                existing = CourseAssignment.query.filter_by(
+                    course_id=course.id, assignment_id=assignment_id
+                ).first()
+                if existing:
+                    existing.is_active = True
+                    flash(f"'{assignment.title}' re-enabled for this course.", "info")
+                else:
+                    db.session.add(CourseAssignment(
+                        course_id=course.id, assignment_id=assignment_id
+                    ))
+                    flash(f"'{assignment.title}' added to this course.", "success")
+                db.session.commit()
+
+        elif action == "remove_assignment":
+            assignment_id = request.form.get("assignment_id", type=int)
+            ca = CourseAssignment.query.filter_by(
+                course_id=course.id, assignment_id=assignment_id
+            ).first_or_404()
+            db.session.delete(ca)
+            db.session.commit()
+            flash("Assignment removed from this course.", "info")
+
+        return redirect(url_for("instructor.course_detail", course_id=course_id))
+
+    # Build the linked assignments list
+    linked = (
+        CourseAssignment.query
+        .filter_by(course_id=course.id)
+        .order_by(CourseAssignment.created_at.desc())
+        .all()
+    )
+
+    # Build pool options (assignments by this instructor not already linked)
+    linked_ids = {ca.assignment_id for ca in linked}
+    if current_user.is_admin:
+        pool_options = Assignment.query.filter(
+            Assignment.is_active == True,
+            ~Assignment.id.in_(linked_ids) if linked_ids else True
+        ).order_by(Assignment.title).all()
+    else:
+        pool_options = (
+            Assignment.query
+            .filter(
+                Assignment.instructor_id == instr.id,
+                Assignment.is_active == True,
+                ~Assignment.id.in_(linked_ids) if linked_ids else True,
+            )
+            .order_by(Assignment.title)
+            .all()
+        )
 
     all_sections = (
         course.sections
@@ -234,16 +302,27 @@ def sections(course_id: int):
         .all()
     )
     semesters = Semester.query.filter_by(is_active=True).order_by(Semester.name.asc()).all()
+
     return render_template(
-        "instructor/sections.html",
+        "instructor/course_detail.html",
         course=course,
         sections=all_sections,
         semesters=semesters,
+        linked=linked,
+        pool_options=pool_options,
     )
 
 
+# Backward-compat redirect for old sections URL
+@instructor_bp.route("/courses/<int:course_id>/sections", methods=["GET", "POST"])
+@login_required
+@instructor_required
+def sections(course_id: int):
+    return redirect(url_for("instructor.course_detail", course_id=course_id), 301)
+
+
 # ---------------------------------------------------------------------------
-# Assignments
+# Assignment pool
 # ---------------------------------------------------------------------------
 
 @instructor_bp.route("/assignments", methods=["GET"])
@@ -251,29 +330,23 @@ def sections(course_id: int):
 @instructor_required
 def assignments():
     instr = _get_instructor_or_404()
-    # Get all sections belonging to this instructor's courses
-    section_ids = [
-        s.id
-        for c in instr.courses.all()
-        for s in c.sections.all()
-    ]
-    all_assignments = (
-        Assignment.query
-        .filter(Assignment.section_id.in_(section_ids))
-        .order_by(Assignment.created_at.desc())
-        .all()
-    )
-    return render_template("instructor/assignments.html", assignments=all_assignments)
+    if current_user.is_admin:
+        pool = Assignment.query.order_by(Assignment.created_at.desc()).all()
+    else:
+        pool = (
+            Assignment.query
+            .filter_by(instructor_id=instr.id)
+            .order_by(Assignment.created_at.desc())
+            .all()
+        )
+    return render_template("instructor/assignment_pool.html", assignments=pool)
 
 
-@instructor_bp.route("/section/<int:section_id>/assignments/new", methods=["GET", "POST"])
+@instructor_bp.route("/assignments/new", methods=["GET", "POST"])
 @login_required
 @instructor_required
-def new_assignment(section_id: int):
+def new_assignment():
     instr = _get_instructor_or_404()
-    section = Section.query.get_or_404(section_id)
-    if section.course.instructor_id != instr.id:
-        abort(403)
 
     if request.method == "POST":
         title = request.form.get("title", "").strip()
@@ -291,7 +364,6 @@ def new_assignment(section_id: int):
                 flash("Invalid due date format.", "danger")
                 return render_template(
                     "instructor/new_assignment.html",
-                    section=section,
                     metric_choices=METRIC_CHOICES,
                 )
 
@@ -299,7 +371,6 @@ def new_assignment(section_id: int):
             flash("Assignment title is required.", "danger")
             return render_template(
                 "instructor/new_assignment.html",
-                section=section,
                 metric_choices=METRIC_CHOICES,
             )
 
@@ -316,7 +387,7 @@ def new_assignment(section_id: int):
             })
 
         assignment = Assignment(
-            section_id=section_id,
+            instructor_id=instr.id,
             title=title,
             description=description or None,
             scoring_metric=metric,
@@ -328,7 +399,6 @@ def new_assignment(section_id: int):
         db.session.add(assignment)
         db.session.flush()
 
-        # Handle dataset upload
         dataset_file = request.files.get("dataset_file")
         if dataset_file and dataset_file.filename:
             if _allowed_file(dataset_file.filename):
@@ -338,7 +408,6 @@ def new_assignment(section_id: int):
             else:
                 flash("Dataset must be a CSV file.", "warning")
 
-        # Handle ground truth upload
         gt_file = request.files.get("ground_truth_file")
         if gt_file and gt_file.filename:
             if _allowed_file(gt_file.filename):
@@ -349,12 +418,11 @@ def new_assignment(section_id: int):
                 flash("Ground truth must be a CSV file.", "warning")
 
         db.session.commit()
-        flash(f"Assignment '{title}' created.", "success")
-        return redirect(url_for("instructor.section_detail", section_id=section_id))
+        flash(f"Assignment '{title}' created and added to your pool.", "success")
+        return redirect(url_for("instructor.assignments"))
 
     return render_template(
         "instructor/new_assignment.html",
-        section=section,
         metric_choices=METRIC_CHOICES,
     )
 
@@ -365,7 +433,7 @@ def new_assignment(section_id: int):
 def edit_assignment(assignment_id: int):
     instr = _get_instructor_or_404()
     assignment = Assignment.query.get_or_404(assignment_id)
-    if assignment.section.course.instructor_id != instr.id:
+    if not _owns_assignment(instr, assignment):
         abort(403)
 
     if request.method == "POST":
@@ -380,7 +448,6 @@ def edit_assignment(assignment_id: int):
         due_date_str = request.form.get("due_date", "").strip()
         if due_date_str:
             try:
-                from datetime import datetime
                 assignment.due_date = datetime.strptime(due_date_str, "%Y-%m-%dT%H:%M")
             except ValueError:
                 flash("Invalid due date.", "danger")
@@ -407,7 +474,6 @@ def edit_assignment(assignment_id: int):
         else:
             assignment.profit_matrix_config = None
 
-        # Handle new dataset upload
         dataset_file = request.files.get("dataset_file")
         if dataset_file and dataset_file.filename:
             if _allowed_file(dataset_file.filename):
@@ -415,7 +481,6 @@ def edit_assignment(assignment_id: int):
                 storage.upload_fileobj(dataset_file.stream, f"datasets/{fname}")
                 assignment.dataset_filename = fname
 
-        # Handle new ground truth upload
         gt_file = request.files.get("ground_truth_file")
         if gt_file and gt_file.filename:
             if _allowed_file(gt_file.filename):
@@ -425,9 +490,7 @@ def edit_assignment(assignment_id: int):
 
         db.session.commit()
         flash("Assignment updated.", "success")
-        return redirect(
-            url_for("instructor.section_detail", section_id=assignment.section_id)
-        )
+        return redirect(url_for("instructor.assignments"))
 
     return render_template(
         "instructor/edit_assignment.html",
@@ -437,7 +500,7 @@ def edit_assignment(assignment_id: int):
 
 
 # ---------------------------------------------------------------------------
-# Section detail (students + assignments)
+# Section detail
 # ---------------------------------------------------------------------------
 
 @instructor_bp.route("/section/<int:section_id>")
@@ -446,56 +509,147 @@ def edit_assignment(assignment_id: int):
 def section_detail(section_id: int):
     instr = _get_instructor_or_404()
     section = Section.query.get_or_404(section_id)
-    if section.course.instructor_id != instr.id:
+    if not _owns_section(instr, section):
         abort(403)
 
     enrollments = Enrollment.query.filter_by(section_id=section_id).all()
-    assignments_list = (
-        section.assignments.order_by(Assignment.due_date.asc().nullslast()).all()
-    )
+    effective = section.get_effective_assignments()
+
+    # Build override state map: assignment_id → excluded bool
+    overrides = {o.assignment_id: o.excluded for o in section.section_overrides.all()}
+
+    # Pool assignments that are NOT already in the course and NOT in effective
+    # (for section-level adds)
+    course_aid_set = {
+        ca.assignment_id
+        for ca in section.course.course_assignments.filter_by(is_active=True).all()
+    }
+    added_ids = {aid for aid, excl in overrides.items() if not excl}
+    effective_ids = {a.id for a in effective}
+
+    if current_user.is_admin:
+        section_add_options = Assignment.query.filter(
+            Assignment.is_active == True,
+            ~Assignment.id.in_(effective_ids) if effective_ids else True,
+        ).order_by(Assignment.title).all()
+    else:
+        section_add_options = Assignment.query.filter(
+            Assignment.instructor_id == instr.id,
+            Assignment.is_active == True,
+            ~Assignment.id.in_(effective_ids) if effective_ids else True,
+        ).order_by(Assignment.title).all()
+
     return render_template(
         "instructor/section_detail.html",
         section=section,
         enrollments=enrollments,
-        assignments=assignments_list,
+        assignments=effective,
+        overrides=overrides,
+        course_aid_set=course_aid_set,
+        section_add_options=section_add_options,
     )
 
 
 # ---------------------------------------------------------------------------
-# Instructor leaderboard view
+# Section-level assignment overrides
 # ---------------------------------------------------------------------------
 
-@instructor_bp.route("/assignment/<int:assignment_id>/leaderboard")
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/exclude", methods=["POST"])
 @login_required
 @instructor_required
-def leaderboard(assignment_id: int):
+def section_exclude_assignment(section_id: int, assignment_id: int):
     instr = _get_instructor_or_404()
-    assignment = Assignment.query.get_or_404(assignment_id)
-    if assignment.section.course.instructor_id != instr.id:
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
         abort(403)
+    Assignment.query.get_or_404(assignment_id)
 
-    section = assignment.section
-    enrollments = Enrollment.query.filter_by(section_id=section.id).all()
+    existing = SectionOverride.query.filter_by(
+        section_id=section_id, assignment_id=assignment_id
+    ).first()
+    if existing:
+        existing.excluded = True
+    else:
+        db.session.add(SectionOverride(
+            section_id=section_id, assignment_id=assignment_id, excluded=True
+        ))
+    db.session.commit()
+    flash("Assignment hidden from this section.", "info")
+    return redirect(url_for("instructor.section_detail", section_id=section_id))
+
+
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/include", methods=["POST"])
+@login_required
+@instructor_required
+def section_include_assignment(section_id: int, assignment_id: int):
+    """Remove an exclude override (restores inherited), or add a section-only assignment."""
+    instr = _get_instructor_or_404()
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
+        abort(403)
+    Assignment.query.get_or_404(assignment_id)
+
+    action = request.form.get("override_action", "restore")
+
+    if action == "add":
+        # Add to this section only (not course-wide)
+        existing = SectionOverride.query.filter_by(
+            section_id=section_id, assignment_id=assignment_id
+        ).first()
+        if existing:
+            existing.excluded = False
+        else:
+            db.session.add(SectionOverride(
+                section_id=section_id, assignment_id=assignment_id, excluded=False
+            ))
+        db.session.commit()
+        flash("Assignment added to this section.", "success")
+    else:
+        # Remove exclude override (restore inheritance)
+        override = SectionOverride.query.filter_by(
+            section_id=section_id, assignment_id=assignment_id, excluded=True
+        ).first()
+        if override:
+            db.session.delete(override)
+            db.session.commit()
+        flash("Assignment restored for this section.", "info")
+
+    return redirect(url_for("instructor.section_detail", section_id=section_id))
+
+
+# ---------------------------------------------------------------------------
+# Leaderboard (section-scoped)
+# ---------------------------------------------------------------------------
+
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/leaderboard")
+@login_required
+@instructor_required
+def leaderboard(section_id: int, assignment_id: int):
+    instr = _get_instructor_or_404()
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
+        abort(403)
+    assignment = Assignment.query.get_or_404(assignment_id)
+
+    enrollments = Enrollment.query.filter_by(section_id=section_id).all()
 
     board = []
     for enr in enrollments:
         user = enr.user
-        best = _best_submission(user.id, assignment)
+        best = _best_submission_for_section(user.id, assignment_id, section_id, assignment)
         all_subs = (
             Submission.query
             .filter_by(user_id=user.id, assignment_id=assignment_id)
             .count()
         )
-        board.append(
-            {
-                "alias": user.display_name,
-                "email": user.email,
-                "score": best.score if best else None,
-                "submitted_at": best.submitted_at if best else None,
-                "total_submissions": all_subs,
-                "detail": best.detail if best else {},
-            }
-        )
+        board.append({
+            "alias": user.display_name,
+            "email": user.email,
+            "score": best.score if best else None,
+            "submitted_at": best.submitted_at if best else None,
+            "total_submissions": all_subs,
+            "detail": best.detail if best else {},
+        })
 
     reverse = assignment.higher_is_better
     board.sort(
@@ -524,7 +678,7 @@ def leaderboard(assignment_id: int):
 def enroll_student(section_id: int):
     instr = _get_instructor_or_404()
     section = Section.query.get_or_404(section_id)
-    if section.course.instructor_id != instr.id:
+    if not _owns_section(instr, section):
         abort(403)
 
     email = request.form.get("email", "").strip().lower()
@@ -547,7 +701,7 @@ def enroll_student(section_id: int):
 def remove_enrollment(enrollment_id: int):
     instr = _get_instructor_or_404()
     enrollment = Enrollment.query.get_or_404(enrollment_id)
-    if enrollment.section.course.instructor_id != instr.id:
+    if not _owns_section(instr, enrollment.section):
         abort(403)
 
     section_id = enrollment.section_id
@@ -651,13 +805,21 @@ def _allowed_file(filename: str) -> bool:
     )
 
 
-def _best_submission(user_id: int, assignment: Assignment):
+def _best_submission_for_section(user_id: int, assignment_id: int, section_id: int, assignment: Assignment):
+    """Best submission scoped to a section. Falls back to section_id=NULL for old rows."""
     subs = (
         Submission.query
-        .filter_by(user_id=user_id, assignment_id=assignment.id)
+        .filter_by(user_id=user_id, assignment_id=assignment_id, section_id=section_id)
         .filter(Submission.score.isnot(None))
         .all()
     )
+    if not subs:
+        subs = (
+            Submission.query
+            .filter_by(user_id=user_id, assignment_id=assignment_id)
+            .filter(Submission.score.isnot(None), Submission.section_id.is_(None))
+            .all()
+        )
     if not subs:
         return None
     if assignment.higher_is_better:

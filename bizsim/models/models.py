@@ -22,7 +22,6 @@ class User(UserMixin, db.Model):
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
-    # Relationships
     enrollments = db.relationship("Enrollment", back_populates="user", lazy="dynamic")
     submissions = db.relationship("Submission", back_populates="user", lazy="dynamic")
     instructor_profile = db.relationship(
@@ -51,7 +50,7 @@ class Semester(db.Model):
     __tablename__ = "semesters"
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(64), nullable=False)   # e.g. "Fall 2025"
+    name = db.Column(db.String(64), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -76,6 +75,8 @@ class Instructor(db.Model):
 
     user = db.relationship("User", back_populates="instructor_profile")
     courses = db.relationship("Course", back_populates="instructor", lazy="dynamic")
+    # Assignments created by this instructor (the pool)
+    pool_assignments = db.relationship("Assignment", back_populates="instructor", lazy="dynamic")
 
     def __repr__(self) -> str:
         return f"<Instructor {self.name}>"
@@ -92,14 +93,18 @@ class Course(db.Model):
     instructor_id = db.Column(
         db.Integer, db.ForeignKey("instructors.id"), nullable=False
     )
-    name = db.Column(db.String(128), nullable=False)   # e.g. "Data Mining"
-    code = db.Column(db.String(32), nullable=True)     # e.g. "BIS 4850"
+    name = db.Column(db.String(128), nullable=False)
+    code = db.Column(db.String(32), nullable=True)
     description = db.Column(db.Text, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     instructor = db.relationship("Instructor", back_populates="courses")
     sections = db.relationship("Section", back_populates="course", lazy="dynamic")
+    course_assignments = db.relationship(
+        "CourseAssignment", back_populates="course", lazy="dynamic",
+        cascade="all, delete-orphan"
+    )
 
     @property
     def display_name(self) -> str:
@@ -121,23 +126,46 @@ class Section(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     course_id = db.Column(db.Integer, db.ForeignKey("courses.id"), nullable=False)
     semester_id = db.Column(db.Integer, db.ForeignKey("semesters.id"), nullable=False)
-    section_name = db.Column(db.String(64), nullable=False)  # e.g. "001", "Online"
+    section_name = db.Column(db.String(64), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     course = db.relationship("Course", back_populates="sections")
     semester = db.relationship("Semester", back_populates="sections")
     enrollments = db.relationship("Enrollment", back_populates="section", lazy="dynamic")
-    assignments = db.relationship("Assignment", back_populates="section", lazy="dynamic")
+    section_overrides = db.relationship(
+        "SectionOverride", back_populates="section", lazy="dynamic",
+        cascade="all, delete-orphan"
+    )
+    submissions = db.relationship("Submission", back_populates="section", lazy="dynamic")
 
     @property
     def full_label(self) -> str:
-        """Human-readable label for dropdowns and leaderboards."""
         course = self.course
         instructor = course.instructor
         return (
             f"{self.semester.name} | {instructor.name} | "
             f"{course.display_name} | Section {self.section_name}"
+        )
+
+    def get_effective_assignments(self):
+        """Return assignments visible to this section (course pool + overrides)."""
+        course_aid_set = {
+            ca.assignment_id
+            for ca in self.course.course_assignments.filter_by(is_active=True).all()
+        }
+        overrides = self.section_overrides.all()
+        excluded = {o.assignment_id for o in overrides if o.excluded}
+        added    = {o.assignment_id for o in overrides if not o.excluded}
+        effective = (course_aid_set - excluded) | added
+        if not effective:
+            return []
+        from sqlalchemy import asc, nullslast
+        return (
+            Assignment.query
+            .filter(Assignment.id.in_(effective), Assignment.is_active == True)
+            .order_by(Assignment.due_date.asc().nullslast())
+            .all()
         )
 
     def __repr__(self) -> str:
@@ -168,7 +196,7 @@ class Enrollment(db.Model):
 
 
 # ---------------------------------------------------------------------------
-# Assignment
+# Assignment (pool — not tied to any specific section or course)
 # ---------------------------------------------------------------------------
 
 SCORING_METRICS = [
@@ -188,7 +216,8 @@ class Assignment(db.Model):
     __tablename__ = "assignments"
 
     id = db.Column(db.Integer, primary_key=True)
-    section_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=False)
+    # instructor_id is nullable to support legacy rows that had section_id instead
+    instructor_id = db.Column(db.Integer, db.ForeignKey("instructors.id"), nullable=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
     dataset_filename = db.Column(db.String(255), nullable=True)
@@ -198,11 +227,18 @@ class Assignment(db.Model):
     max_submissions_per_day = db.Column(db.Integer, default=3, nullable=False)
     due_date = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    # JSON-encoded profit matrix configuration (only used when scoring_metric == "profit_matrix")
     profit_matrix_config = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
-    section = db.relationship("Section", back_populates="assignments")
+    instructor = db.relationship("Instructor", back_populates="pool_assignments")
+    course_assignments = db.relationship(
+        "CourseAssignment", back_populates="assignment", lazy="dynamic",
+        cascade="all, delete-orphan"
+    )
+    section_overrides = db.relationship(
+        "SectionOverride", back_populates="assignment", lazy="dynamic",
+        cascade="all, delete-orphan"
+    )
     submissions = db.relationship("Submission", back_populates="assignment", lazy="dynamic")
 
     @property
@@ -218,7 +254,6 @@ class Assignment(db.Model):
 
     @property
     def profit_matrix_cfg(self) -> dict:
-        """Parsed profit matrix config, or defaults."""
         import json
         if self.profit_matrix_config:
             try:
@@ -237,8 +272,62 @@ class Assignment(db.Model):
             return False
         return datetime.now(timezone.utc) > self.due_date.replace(tzinfo=timezone.utc)
 
+    def linked_course_count(self) -> int:
+        return self.course_assignments.filter_by(is_active=True).count()
+
     def __repr__(self) -> str:
         return f"<Assignment {self.title}>"
+
+
+# ---------------------------------------------------------------------------
+# CourseAssignment — links an assignment from the pool to a course
+# ---------------------------------------------------------------------------
+
+class CourseAssignment(db.Model):
+    __tablename__ = "course_assignments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    course_id = db.Column(db.Integer, db.ForeignKey("courses.id"), nullable=False)
+    assignment_id = db.Column(db.Integer, db.ForeignKey("assignments.id"), nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        db.UniqueConstraint("course_id", "assignment_id", name="uq_course_assignment"),
+    )
+
+    course = db.relationship("Course", back_populates="course_assignments")
+    assignment = db.relationship("Assignment", back_populates="course_assignments")
+
+    def __repr__(self) -> str:
+        return f"<CourseAssignment course={self.course_id} assignment={self.assignment_id}>"
+
+
+# ---------------------------------------------------------------------------
+# SectionOverride — per-section add or exclude of an assignment
+# ---------------------------------------------------------------------------
+
+class SectionOverride(db.Model):
+    __tablename__ = "section_overrides"
+
+    id = db.Column(db.Integer, primary_key=True)
+    section_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=False)
+    assignment_id = db.Column(db.Integer, db.ForeignKey("assignments.id"), nullable=False)
+    # excluded=True  → hide an inherited assignment from this section
+    # excluded=False → add an assignment to this section only (not course-wide)
+    excluded = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        db.UniqueConstraint("section_id", "assignment_id", name="uq_section_override"),
+    )
+
+    section = db.relationship("Section", back_populates="section_overrides")
+    assignment = db.relationship("Assignment", back_populates="section_overrides")
+
+    def __repr__(self) -> str:
+        action = "exclude" if self.excluded else "add"
+        return f"<SectionOverride section={self.section_id} assignment={self.assignment_id} {action}>"
 
 
 # ---------------------------------------------------------------------------
@@ -251,15 +340,20 @@ class Submission(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     assignment_id = db.Column(db.Integer, db.ForeignKey("assignments.id"), nullable=False)
+    # section_id added post-launch; nullable for backward compat with old rows
+    section_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=True)
     filename = db.Column(db.String(255), nullable=False)
-    score = db.Column(db.Float, nullable=True)         # primary score for ranking
-    error_message = db.Column(db.Text, nullable=True)  # scoring error, if any
-    score_detail = db.Column(db.Text, nullable=True)   # JSON breakdown (profit_matrix etc.)
+    score = db.Column(db.Float, nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    score_detail = db.Column(db.Text, nullable=True)
     submitted_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = db.relationship("User", back_populates="submissions")
+    assignment = db.relationship("Assignment", back_populates="submissions")
+    section = db.relationship("Section", back_populates="submissions")
 
     @property
     def detail(self) -> dict:
-        """Parsed score_detail JSON, or empty dict."""
         import json
         if self.score_detail:
             try:
@@ -267,9 +361,6 @@ class Submission(db.Model):
             except (ValueError, TypeError):
                 pass
         return {}
-
-    user = db.relationship("User", back_populates="submissions")
-    assignment = db.relationship("Assignment", back_populates="submissions")
 
     def __repr__(self) -> str:
         return f"<Submission user={self.user_id} assignment={self.assignment_id} score={self.score}>"
