@@ -70,6 +70,7 @@ def create_app(config_name: str | None = None) -> Flask:
 
     @app.errorhandler(500)
     def server_error(e):
+        db.session.rollback()
         return render_template("errors/500.html"), 500
 
     # CLI command: initialise DB + create default admin
