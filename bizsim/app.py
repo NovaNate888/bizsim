@@ -5,7 +5,6 @@ from flask_migrate import Migrate
 
 from config import config
 from models import db, User
-from utils.email import mail
 
 
 def create_app(config_name: str | None = None) -> Flask:
@@ -20,7 +19,6 @@ def create_app(config_name: str | None = None) -> Flask:
 
     # Extensions
     db.init_app(app)
-    mail.init_app(app)
     migrate = Migrate(app, db)
 
     with app.app_context():

@@ -1,8 +1,6 @@
+import resend
 from flask import current_app, url_for
-from flask_mail import Mail, Message
 from itsdangerous import URLSafeTimedSerializer
-
-mail = Mail()
 
 
 def _serializer() -> URLSafeTimedSerializer:
@@ -56,6 +54,16 @@ def _print_dev_link(label: str, url: str, recipient: str) -> None:
     print(f"{border}\n", flush=True)
 
 
+def _send_email(subject: str, recipient: str, html: str) -> None:
+    resend.api_key = current_app.config["RESEND_API_KEY"]
+    resend.Emails.send({
+        "from": current_app.config["MAIL_DEFAULT_SENDER"],
+        "to": [recipient],
+        "subject": subject,
+        "html": html,
+    })
+
+
 def send_verification_email(user_email: str) -> None:
     token = generate_verification_token(user_email)
     verify_url = url_for("auth.verify_email", token=token, _external=True)
@@ -64,9 +72,9 @@ def send_verification_email(user_email: str) -> None:
         _print_dev_link("Email Verification Link", verify_url, user_email)
         return
 
-    msg = Message(
+    _send_email(
         subject="Verify your BizSim account",
-        recipients=[user_email],
+        recipient=user_email,
         html=f"""
         <p>Welcome to <strong>BizSim</strong>!</p>
         <p>Please click the link below to verify your email address.
@@ -75,7 +83,6 @@ def send_verification_email(user_email: str) -> None:
         <p>If you did not create an account, you can safely ignore this email.</p>
         """,
     )
-    mail.send(msg)
 
 
 def send_password_reset_email(user_email: str) -> None:
@@ -86,9 +93,9 @@ def send_password_reset_email(user_email: str) -> None:
         _print_dev_link("Password Reset Link", reset_url, user_email)
         return
 
-    msg = Message(
+    _send_email(
         subject="Reset your BizSim password",
-        recipients=[user_email],
+        recipient=user_email,
         html=f"""
         <p>You requested a password reset for your <strong>BizSim</strong> account.</p>
         <p>Click the link below to set a new password. This link expires in 30 minutes.</p>
@@ -96,4 +103,3 @@ def send_password_reset_email(user_email: str) -> None:
         <p>If you did not request this, you can safely ignore this email.</p>
         """,
     )
-    mail.send(msg)
