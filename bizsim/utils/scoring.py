@@ -38,21 +38,17 @@ def _coerce_predictions(
     Strategy:
       1. If both have an 'id' column, merge on it.
       2. Otherwise assume row-aligned and use positional order.
-    Returns (y_true, y_pred) numpy arrays.
+    Returns (y_true, y_pred) numpy float arrays.
     """
-    # Determine prediction column in submission
     if target_col and target_col in sub.columns:
         pred_col = target_col
     else:
-        # Pick the first non-id column
         non_id = [c for c in sub.columns if c.lower() != "id"]
         if not non_id:
             raise ValueError("Submission CSV has no usable prediction column.")
         pred_col = non_id[0]
 
     if "id" in gt.columns and "id" in sub.columns:
-        # Rename the prediction column before merging to avoid pandas adding
-        # _x/_y suffixes when target_col and pred_col share the same name.
         sub_aligned = sub[["id", pred_col]].rename(columns={pred_col: "__pred__"})
         merged = gt[["id", target_col]].merge(sub_aligned, on="id", how="left")
         y_true = merged[target_col].values
@@ -70,6 +66,127 @@ def _coerce_predictions(
         raise ValueError("Submission contains NaN values in the prediction column.")
 
     return y_true.astype(float), y_pred.astype(float)
+
+
+def _coerce_predictions_labels(
+    gt: pd.DataFrame,
+    sub: pd.DataFrame,
+    target_col: str,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Align submission predictions to ground truth, normalizing to lowercase strings.
+    Used for text/categorical label classification.
+    Returns (y_true, y_pred) as lowercase-stripped string arrays.
+    """
+    if target_col and target_col in sub.columns:
+        pred_col = target_col
+    else:
+        non_id = [c for c in sub.columns if c.lower() != "id"]
+        if not non_id:
+            raise ValueError("Submission CSV has no usable prediction column.")
+        pred_col = non_id[0]
+
+    if "id" in gt.columns and "id" in sub.columns:
+        sub_aligned = sub[["id", pred_col]].rename(columns={pred_col: "__pred__"})
+        merged = gt[["id", target_col]].merge(sub_aligned, on="id", how="left")
+        y_true = merged[target_col].values
+        y_pred = merged["__pred__"].values
+    else:
+        if len(gt) != len(sub):
+            raise ValueError(
+                f"Row count mismatch: ground truth has {len(gt)} rows, "
+                f"submission has {len(sub)} rows."
+            )
+        y_true = gt[target_col].values
+        y_pred = sub[pred_col].values
+
+    if pd.isnull(y_pred).any():
+        raise ValueError("Submission contains missing values in the prediction column.")
+
+    y_true_norm = np.array([str(v).strip().lower() for v in y_true])
+    y_pred_norm = np.array([str(v).strip().lower() for v in y_pred])
+    return y_true_norm, y_pred_norm
+
+
+def _score_accuracy_detail(
+    gt: pd.DataFrame,
+    sub: pd.DataFrame,
+    target_col: str,
+) -> tuple:
+    """
+    Compute accuracy with per-class breakdown. Handles numeric or text labels.
+    Returns (accuracy_float, detail_dict).
+    detail_dict keys: accuracy, n_correct, n_total, misclassification_rate, per_class
+    """
+    if pd.api.types.is_numeric_dtype(gt[target_col]):
+        y_true_f, y_pred_f = _coerce_predictions(gt, sub, target_col)
+        y_true_norm = np.array([str(int(round(v))) for v in y_true_f])
+        y_pred_norm = np.array([str(int(round(v))) for v in y_pred_f])
+    else:
+        y_true_norm, y_pred_norm = _coerce_predictions_labels(gt, sub, target_col)
+
+    n_total = len(y_true_norm)
+    correct = y_true_norm == y_pred_norm
+    n_correct = int(correct.sum())
+    accuracy = n_correct / n_total if n_total else 0.0
+
+    classes = sorted(set(y_true_norm))
+    per_class = {}
+    for cls in classes:
+        mask = y_true_norm == cls
+        cls_total = int(mask.sum())
+        cls_correct = int((correct & mask).sum())
+        per_class[cls] = {"correct": cls_correct, "total": cls_total}
+
+    detail = {
+        "accuracy": accuracy,
+        "n_correct": n_correct,
+        "n_total": n_total,
+        "misclassification_rate": round(1.0 - accuracy, 8),
+        "per_class": per_class,
+    }
+    return accuracy, detail
+
+
+def score_accuracy_detail_from_streams(
+    submission_bytes: bytes,
+    ground_truth_bytes: bytes,
+    target_col: str,
+) -> tuple:
+    """
+    Score classification using accuracy. Handles text or numeric labels.
+    Returns (accuracy_float, detail_dict).
+    """
+    gt = pd.read_csv(io.BytesIO(ground_truth_bytes))
+    sub = pd.read_csv(io.BytesIO(submission_bytes))
+
+    if target_col not in gt.columns:
+        raise ValueError(
+            f"Target column '{target_col}' not found in ground truth CSV."
+        )
+
+    return _score_accuracy_detail(gt, sub, target_col)
+
+
+def get_valid_labels(ground_truth_bytes: bytes, target_col: str) -> set:
+    """Returns the set of valid label values (lowercased, stripped) from ground truth."""
+    gt = pd.read_csv(io.BytesIO(ground_truth_bytes))
+    if target_col not in gt.columns:
+        return set()
+    return {str(v).strip().lower() for v in gt[target_col].dropna().unique()}
+
+
+def get_submission_labels(submission_bytes: bytes, target_col: str) -> set:
+    """Returns the set of label values (lowercased, stripped) present in a submission CSV."""
+    sub = pd.read_csv(io.BytesIO(submission_bytes))
+    if target_col in sub.columns:
+        pred_col = target_col
+    else:
+        non_id = [c for c in sub.columns if c.lower() != "id"]
+        if not non_id:
+            return set()
+        pred_col = non_id[0]
+    return {str(v).strip().lower() for v in sub[pred_col].dropna().unique()}
 
 
 def score_submission(
@@ -96,11 +213,6 @@ def score_submission(
     -------
     float
         The computed score.
-
-    Raises
-    ------
-    ValueError
-        If the files can't be aligned or the metric is unknown.
     """
     gt = _load_csv(ground_truth_path)
     sub = _load_csv(submission_path)
@@ -111,33 +223,27 @@ def score_submission(
             f"Available columns: {list(gt.columns)}"
         )
 
-    y_true, y_pred = _coerce_predictions(gt, sub, target_col)
-
     metric = metric.lower()
+
+    if metric == "accuracy":
+        acc, _ = _score_accuracy_detail(gt, sub, target_col)
+        return acc
+
+    y_true, y_pred = _coerce_predictions(gt, sub, target_col)
 
     if metric == "rmse":
         return float(np.sqrt(mean_squared_error(y_true, y_pred)))
-
     elif metric == "mae":
         return float(mean_absolute_error(y_true, y_pred))
-
-    elif metric == "accuracy":
-        y_true_int = y_true.round().astype(int)
-        y_pred_int = y_pred.round().astype(int)
-        return float(accuracy_score(y_true_int, y_pred_int))
-
     elif metric == "f1":
         y_true_int = y_true.round().astype(int)
         y_pred_int = y_pred.round().astype(int)
         avg = "binary" if len(np.unique(y_true_int)) <= 2 else "macro"
         return float(f1_score(y_true_int, y_pred_int, average=avg, zero_division=0))
-
     elif metric == "auc":
         return float(roc_auc_score(y_true, y_pred))
-
     elif metric == "r2":
         return float(r2_score(y_true, y_pred))
-
     else:
         raise ValueError(f"Unknown scoring metric: '{metric}'")
 
@@ -187,7 +293,6 @@ def score_profit_matrix(
     total_profit = tp * tp_val + fp * fp_val + tn * tn_val + fn * fn_val
     houses_marketed = tp + fp
     marketing_expenditure = mktg_cost * houses_marketed
-    # Revenue = gross return per TP = net profit per TP + marketing cost per TP
     revenue = (tp_val + mktg_cost) * tp
     misclassification_rate = (fp + fn) / total_rows if total_rows else 0.0
     profit_per_row = total_profit / total_rows if total_rows else 0.0
@@ -226,15 +331,18 @@ def score_from_streams(
             f"Target column '{target_col}' not found in ground truth CSV."
         )
 
+    metric = metric.lower()
+
+    if metric == "accuracy":
+        acc, _ = _score_accuracy_detail(gt, sub, target_col)
+        return acc
+
     y_true, y_pred = _coerce_predictions(gt, sub, target_col)
 
-    metric = metric.lower()
     if metric == "rmse":
         return float(np.sqrt(mean_squared_error(y_true, y_pred)))
     elif metric == "mae":
         return float(mean_absolute_error(y_true, y_pred))
-    elif metric == "accuracy":
-        return float(accuracy_score(y_true.round().astype(int), y_pred.round().astype(int)))
     elif metric == "f1":
         y_ti = y_true.round().astype(int)
         y_pi = y_pred.round().astype(int)
@@ -263,17 +371,18 @@ def score_from_bytes(
             f"Target column '{target_col}' not found in ground truth CSV."
         )
 
+    metric = metric.lower()
+
+    if metric == "accuracy":
+        acc, _ = _score_accuracy_detail(gt, sub, target_col)
+        return acc
+
     y_true, y_pred = _coerce_predictions(gt, sub, target_col)
 
-    # Reuse logic by writing to temp and calling score_submission would duplicate;
-    # call inline instead.
-    metric = metric.lower()
     if metric == "rmse":
         return float(np.sqrt(mean_squared_error(y_true, y_pred)))
     elif metric == "mae":
         return float(mean_absolute_error(y_true, y_pred))
-    elif metric == "accuracy":
-        return float(accuracy_score(y_true.round().astype(int), y_pred.round().astype(int)))
     elif metric == "f1":
         y_ti = y_true.round().astype(int)
         y_pi = y_pred.round().astype(int)

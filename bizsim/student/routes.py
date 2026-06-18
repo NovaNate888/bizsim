@@ -16,7 +16,13 @@ from flask_login import current_user, login_required
 
 from models import Assignment, AssignmentFile, Enrollment, Section, Submission, db
 from utils import storage
-from utils.scoring import score_from_streams, score_profit_matrix
+from utils.scoring import (
+    score_accuracy_detail_from_streams,
+    score_from_streams,
+    score_profit_matrix,
+    get_valid_labels,
+    get_submission_labels,
+)
 
 from . import student_bp
 
@@ -209,6 +215,25 @@ def assignment_detail(section_id: int, assignment_id: int):
                 gt_bytes = storage.download_as_bytes(
                     f"ground_truth/{assignment.ground_truth_filename}"
                 )
+
+                # For accuracy: reject submissions with unrecognized label values
+                if assignment.scoring_metric == "accuracy":
+                    valid = get_valid_labels(gt_bytes, assignment.target_column)
+                    if valid:
+                        submitted = get_submission_labels(
+                            file_bytes, assignment.target_column
+                        )
+                        invalid = submitted - valid
+                        if invalid:
+                            flash(
+                                f"Your submission contains unrecognized label(s): "
+                                f"{', '.join(sorted(invalid))}. "
+                                f"Valid labels are: {', '.join(sorted(valid))}. "
+                                f"Check your spelling and resubmit.",
+                                "danger",
+                            )
+                            return redirect(request.url)
+
                 if assignment.scoring_metric == "profit_matrix":
                     detail = score_profit_matrix(
                         file_bytes,
@@ -225,6 +250,13 @@ def assignment_detail(section_id: int, assignment_id: int):
                             f"${detail['constraint_limit']:,.0f} limit.",
                             "warning",
                         )
+                elif assignment.scoring_metric == "accuracy":
+                    score, acc_detail = score_accuracy_detail_from_streams(
+                        file_bytes,
+                        gt_bytes,
+                        assignment.target_column,
+                    )
+                    score_detail_json = _json.dumps(acc_detail)
                 else:
                     score = score_from_streams(
                         file_bytes,
@@ -259,6 +291,13 @@ def assignment_detail(section_id: int, assignment_id: int):
             if assignment.scoring_metric == "profit_matrix":
                 flash(
                     f"Submission received! Total Profit: <strong>${score:,.2f}</strong>",
+                    "success",
+                )
+            elif assignment.scoring_metric == "accuracy":
+                _d = _json.loads(score_detail_json) if score_detail_json else {}
+                flash(
+                    f"Submission received! Accuracy: <strong>{score * 100:.1f}%</strong> "
+                    f"({_d.get('n_correct', '?')}/{_d.get('n_total', '?')} correct)",
                     "success",
                 )
             else:
@@ -390,11 +429,20 @@ def leaderboard(section_id: int, assignment_id: int):
     )
     _assign_ranks(board, reverse)
 
+    categories = []
+    if assignment.scoring_metric == "accuracy":
+        for entry in board:
+            d = entry.get("detail") or {}
+            if d.get("per_class"):
+                categories = sorted(d["per_class"].keys())
+                break
+
     return render_template(
         "student/leaderboard.html",
         section=section,
         assignment=assignment,
         board=board,
+        categories=categories,
     )
 
 

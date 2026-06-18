@@ -660,11 +660,20 @@ def leaderboard(section_id: int, assignment_id: int):
     )
     _assign_ranks(board, reverse)
 
+    categories = []
+    if assignment.scoring_metric == "accuracy":
+        for entry in board:
+            d = entry.get("detail") or {}
+            if d.get("per_class"):
+                categories = sorted(d["per_class"].keys())
+                break
+
     return render_template(
         "instructor/leaderboard.html",
         assignment=assignment,
         section=section,
         board=board,
+        categories=categories,
     )
 
 

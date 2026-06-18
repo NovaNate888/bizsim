@@ -95,6 +95,64 @@
       Budget constraint: {{ cfg.constraint_name }} &le; ${{ "{:,.0f}".format(cfg.constraint_limit) }}
     </p>
 
+  {% elif assignment.scoring_metric == 'accuracy' %}
+    {# ── Accuracy leaderboard ── #}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle small">
+        <thead class="table-light">
+          <tr>
+            <th>Rank</th>
+            <th>Alias</th>
+            <th>Accuracy</th>
+            <th>Misclass Rate</th>
+            <th># Correct</th>
+            <th>Total Rows</th>
+            {% for cat in categories %}
+              <th>{{ cat }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in board %}
+            {% set d = entry.detail %}
+            <tr class="{% if entry.is_me %}table-primary fw-semibold{% endif %}">
+              <td>
+                {% if entry.rank == 1 %}<span class="fs-5">🥇</span>
+                {% elif entry.rank == 2 %}<span class="fs-5">🥈</span>
+                {% elif entry.rank == 3 %}<span class="fs-5">🥉</span>
+                {% else %}{{ entry.rank }}{% endif %}
+              </td>
+              <td>
+                {{ entry.alias }}
+                {% if entry.is_me %}<span class="badge bg-primary ms-1">You</span>{% endif %}
+              </td>
+              {% if d and d.n_total %}
+                <td class="fw-semibold">{{ "%.1f%%"|format(d.accuracy * 100) }}</td>
+                <td>{{ "%.1f%%"|format(d.misclassification_rate * 100) }}</td>
+                <td>{{ d.n_correct }}</td>
+                <td>{{ d.n_total }}</td>
+                {% for cat in categories %}
+                  {% if cat in d.per_class %}
+                    {% set pc = d.per_class[cat] %}
+                    <td>
+                      {% if pc.total > 0 %}
+                        {{ "%.1f%%"|format(pc.correct / pc.total * 100) }}
+                        <span class="text-muted">({{ pc.correct }}/{{ pc.total }})</span>
+                      {% else %}—{% endif %}
+                    </td>
+                  {% else %}
+                    <td class="text-muted">—</td>
+                  {% endif %}
+                {% endfor %}
+              {% else %}
+                <td colspan="{{ 4 + categories|length }}" class="text-muted">—</td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
   {% else %}
     {# ── Standard leaderboard ── #}
     <div class="table-responsive">
