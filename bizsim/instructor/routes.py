@@ -649,6 +649,7 @@ def leaderboard(section_id: int, assignment_id: int):
             "submitted_at": best.submitted_at if best else None,
             "total_submissions": all_subs,
             "detail": best.detail if best else {},
+            "submission_id": best.id if best else None,
         })
 
     reverse = assignment.higher_is_better
@@ -674,6 +675,40 @@ def leaderboard(section_id: int, assignment_id: int):
         section=section,
         board=board,
         categories=categories,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Delete individual leaderboard submission
+# ---------------------------------------------------------------------------
+
+@instructor_bp.route(
+    "/section/<int:section_id>/submission/<int:submission_id>/delete",
+    methods=["POST"],
+)
+@login_required
+@instructor_required
+def delete_submission(section_id: int, submission_id: int):
+    instr = _get_instructor_or_404()
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
+        abort(403)
+
+    submission = Submission.query.get_or_404(submission_id)
+    # Confirm this submission actually belongs to this section (or is a legacy null-section row)
+    if submission.section_id is not None and submission.section_id != section_id:
+        abort(403)
+
+    assignment_id = submission.assignment_id
+    db.session.delete(submission)
+    db.session.commit()
+    flash("Submission deleted from the leaderboard.", "success")
+    return redirect(
+        url_for(
+            "instructor.leaderboard",
+            section_id=section_id,
+            assignment_id=assignment_id,
+        )
     )
 
 

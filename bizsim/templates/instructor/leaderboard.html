@@ -29,6 +29,20 @@
   <span class="badge bg-secondary fs-6">{{ assignment.metric_label }}</span>
 </div>
 
+{# Macro: delete button for a single submission row #}
+{% macro delete_btn(entry) %}
+  {% if entry.submission_id %}
+    <form method="post"
+          action="{{ url_for('instructor.delete_submission', section_id=section.id, submission_id=entry.submission_id) }}"
+          onsubmit="return confirm('Delete this submission for {{ entry.alias }}? This cannot be undone.');"
+          class="d-inline">
+      <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1" title="Delete this submission">
+        <i class="bi bi-trash"></i>
+      </button>
+    </form>
+  {% endif %}
+{% endmacro %}
+
 {% if board %}
   {% if assignment.scoring_metric == 'profit_matrix' %}
     {# ── Profit matrix leaderboard ── #}
@@ -51,6 +65,7 @@
             <th>Total Profit</th>
             <th>Profit / Row</th>
             <th>Submissions</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -87,6 +102,7 @@
                 <td colspan="10" class="text-muted">—</td>
               {% endif %}
               <td>{{ entry.total_submissions }}</td>
+              <td>{{ delete_btn(entry) }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -115,6 +131,7 @@
               <th>{{ cat }}</th>
             {% endfor %}
             <th>Submissions</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -151,6 +168,7 @@
                 <td colspan="{{ 4 + categories|length }}" class="text-muted">—</td>
               {% endif %}
               <td>{{ entry.total_submissions }}</td>
+              <td>{{ delete_btn(entry) }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -169,6 +187,7 @@
             <th>Best Score</th>
             <th>Total Submissions</th>
             <th>Last Submission</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -195,6 +214,7 @@
                   {{ entry.submitted_at.strftime('%b %d, %Y %I:%M %p') }}
                 {% else %}—{% endif %}
               </td>
+              <td>{{ delete_btn(entry) }}</td>
             </tr>
           {% endfor %}
         </tbody>
