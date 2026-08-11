@@ -151,6 +151,7 @@ def assignment_detail(section_id: int, assignment_id: int):
     enrollment = _get_enrollment_or_404(current_user.id, section_id)
     section = enrollment.section
     assignment = Assignment.query.get_or_404(assignment_id)
+    effective_due_date = section.effective_due_date(assignment)
 
     # Verify this assignment is visible to this section
     effective_ids = {a.id for a in section.get_effective_assignments()}
@@ -170,13 +171,13 @@ def assignment_detail(section_id: int, assignment_id: int):
 
     today_count = _submissions_today(current_user.id, assignment_id, section_id)
     can_submit = (
-        not assignment.is_past_due()
+        not assignment.is_past_due(effective_due_date)
         and today_count < assignment.max_submissions_per_day
     )
 
     if request.method == "POST":
         if not can_submit:
-            if assignment.is_past_due():
+            if assignment.is_past_due(effective_due_date):
                 flash("This assignment is past due.", "danger")
             else:
                 flash(
@@ -324,6 +325,7 @@ def assignment_detail(section_id: int, assignment_id: int):
         "student/assignment_detail.html",
         section=section,
         assignment=assignment,
+        effective_due_date=effective_due_date,
         history=history,
         today_count=today_count,
         can_submit=can_submit,

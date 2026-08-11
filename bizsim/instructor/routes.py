@@ -516,7 +516,10 @@ def section_detail(section_id: int):
     effective = section.get_effective_assignments()
 
     # Build override state map: assignment_id → excluded bool
-    overrides = {o.assignment_id: o.excluded for o in section.section_overrides.all()}
+    override_rows = section.section_overrides.all()
+    overrides = {o.assignment_id: o.excluded for o in override_rows}
+    # Full SectionOverride rows keyed by assignment_id, for due-date form pre-fill
+    section_overrides_by_aid = {o.assignment_id: o for o in override_rows}
 
     # Pool assignments that are NOT already in the course and NOT in effective
     # (for section-level adds)
@@ -545,6 +548,7 @@ def section_detail(section_id: int):
         enrollments=enrollments,
         assignments=effective,
         overrides=overrides,
+        section_overrides_by_aid=section_overrides_by_aid,
         course_aid_set=course_aid_set,
         section_add_options=section_add_options,
     )
@@ -613,6 +617,70 @@ def section_include_assignment(section_id: int, assignment_id: int):
             db.session.delete(override)
             db.session.commit()
         flash("Assignment restored for this section.", "info")
+
+    return redirect(url_for("instructor.section_detail", section_id=section_id))
+
+
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/due-date", methods=["POST"])
+@login_required
+@instructor_required
+def section_set_due_date(section_id: int, assignment_id: int):
+    """Set, clear, or reset a per-section due date override for an assignment."""
+    instr = _get_instructor_or_404()
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
+        abort(403)
+    Assignment.query.get_or_404(assignment_id)
+
+    mode = request.form.get("due_date_mode")
+
+    if mode == "inherit":
+        existing = SectionOverride.query.filter_by(
+            section_id=section_id, assignment_id=assignment_id
+        ).first()
+        if existing:
+            existing.has_due_date_override = False
+            existing.due_date_override = None
+            db.session.commit()
+        flash("Section will use the assignment's default due date.", "info")
+
+    elif mode == "none":
+        existing = SectionOverride.query.filter_by(
+            section_id=section_id, assignment_id=assignment_id
+        ).first()
+        if not existing:
+            existing = SectionOverride(
+                section_id=section_id, assignment_id=assignment_id, excluded=False
+            )
+            db.session.add(existing)
+        existing.has_due_date_override = True
+        existing.due_date_override = None
+        db.session.commit()
+        flash("Due date removed for this section.", "success")
+
+    elif mode == "custom":
+        due_date_str = request.form.get("due_date", "").strip()
+        if not due_date_str:
+            flash("Please provide a valid date/time.", "danger")
+            return redirect(url_for("instructor.section_detail", section_id=section_id))
+        try:
+            parsed = datetime.strptime(due_date_str, "%Y-%m-%dT%H:%M")
+        except ValueError:
+            flash("Please provide a valid date/time.", "danger")
+            return redirect(url_for("instructor.section_detail", section_id=section_id))
+
+        existing = SectionOverride.query.filter_by(
+            section_id=section_id, assignment_id=assignment_id
+        ).first()
+        if not existing:
+            existing = SectionOverride(
+                section_id=section_id, assignment_id=assignment_id, excluded=False
+            )
+            db.session.add(existing)
+        existing.has_due_date_override = True
+        existing.due_date_override = parsed
+        db.session.commit()
+        flash("Section due date updated.", "success")
 
     return redirect(url_for("instructor.section_detail", section_id=section_id))
 

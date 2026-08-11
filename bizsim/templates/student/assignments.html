@@ -39,8 +39,8 @@
             <td class="fw-semibold">{{ a.title }}</td>
             <td><span class="badge bg-secondary">{{ a.scoring_metric.upper() }}</span></td>
             <td>
-              {% if a.due_date %}
-                {{ a.due_date.strftime('%b %d, %Y') }}
+              {% if a.section_due_date %}
+                {{ a.section_due_date.strftime('%b %d, %Y') }}
               {% else %}
                 <span class="text-muted">—</span>
               {% endif %}
@@ -55,7 +55,7 @@
               {% endif %}
             </td>
             <td>
-              {% if a.is_past_due() %}
+              {% if a.is_past_due(a.section_due_date) %}
                 <span class="badge bg-danger">Closed</span>
               {% else %}
                 <span class="badge bg-success">Open</span>

@@ -93,6 +93,9 @@ def _run_schema_migrations(db) -> None:
         "ALTER TABLE assignments ADD COLUMN instructor_id INTEGER REFERENCES instructors(id)",
         "ALTER TABLE assignments ALTER COLUMN section_id DROP NOT NULL",
         "ALTER TABLE submissions ADD COLUMN section_id INTEGER REFERENCES sections(id)",
+        # Phase 3: per-section due date overrides
+        "ALTER TABLE section_overrides ADD COLUMN due_date_override TIMESTAMP",
+        "ALTER TABLE section_overrides ADD COLUMN has_due_date_override BOOLEAN DEFAULT FALSE NOT NULL",
     ]
     for sql in new_columns:
         try:

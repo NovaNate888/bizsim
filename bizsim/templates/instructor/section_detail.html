@@ -102,41 +102,82 @@
       <div class="list-group list-group-flush">
         {% for a in assignments %}
           {% set is_override_add = a.id not in course_aid_set %}
-          <div class="list-group-item d-flex justify-content-between align-items-center">
-            <div>
-              <span class="fw-semibold">{{ a.title }}</span>
-              <span class="badge bg-secondary ms-2">{{ a.scoring_metric.upper() }}</span>
-              {% if is_override_add %}
-                <span class="badge bg-warning text-dark ms-1" title="Added for this section only">Section Only</span>
-              {% endif %}
-              {% if not a.is_active %}
-                <span class="badge bg-danger ms-1">Inactive</span>
-              {% endif %}
-              <br />
-              <small class="text-muted">
-                {% if a.due_date %}Due {{ a.due_date.strftime('%b %d, %Y') }}{% else %}No due date{% endif %}
-                &bull; {{ a.submissions.count() }} submission(s)
-              </small>
-            </div>
-            <div class="d-flex gap-2 flex-shrink-0">
-              <a href="{{ url_for('instructor.leaderboard', section_id=section.id, assignment_id=a.id) }}"
-                 class="btn btn-sm btn-outline-warning">
-                <i class="bi bi-trophy"></i>
-              </a>
-              <a href="{{ url_for('instructor.edit_assignment', assignment_id=a.id) }}"
-                 class="btn btn-sm btn-outline-secondary">
-                <i class="bi bi-pencil"></i>
-              </a>
-              {# Exclude / restore from section #}
-              <form method="POST"
-                    action="{{ url_for('instructor.section_exclude_assignment', section_id=section.id, assignment_id=a.id) }}"
-                    onsubmit="return confirm('Hide this assignment from this section?')">
-                <button type="submit" class="btn btn-sm btn-outline-danger"
-                        title="{% if is_override_add %}Remove section-only assignment{% else %}Hide from this section{% endif %}">
-                  <i class="bi bi-eye-slash"></i>
+          {% set so = section_overrides_by_aid.get(a.id) %}
+          {% if so and so.has_due_date_override %}
+            {% set due_mode = 'none' if so.due_date_override is none else 'custom' %}
+          {% else %}
+            {% set due_mode = 'inherit' %}
+          {% endif %}
+          <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <span class="fw-semibold">{{ a.title }}</span>
+                <span class="badge bg-secondary ms-2">{{ a.scoring_metric.upper() }}</span>
+                {% if is_override_add %}
+                  <span class="badge bg-warning text-dark ms-1" title="Added for this section only">Section Only</span>
+                {% endif %}
+                {% if due_mode != 'inherit' %}
+                  <span class="badge bg-info text-dark ms-1" title="Section has a due date override">Custom Due Date</span>
+                {% endif %}
+                {% if not a.is_active %}
+                  <span class="badge bg-danger ms-1">Inactive</span>
+                {% endif %}
+                <br />
+                <small class="text-muted">
+                  {% if a.section_due_date %}Due {{ a.section_due_date.strftime('%b %d, %Y') }}{% else %}No due date{% endif %}
+                  &bull; {{ a.submissions.count() }} submission(s)
+                </small>
+              </div>
+              <div class="d-flex gap-2 flex-shrink-0">
+                <button type="button" class="btn btn-sm btn-outline-info"
+                        title="Set due date for this section"
+                        onclick="toggleDueDateForm({{ a.id }})">
+                  <i class="bi bi-calendar-event"></i>
                 </button>
-              </form>
+                <a href="{{ url_for('instructor.leaderboard', section_id=section.id, assignment_id=a.id) }}"
+                   class="btn btn-sm btn-outline-warning">
+                  <i class="bi bi-trophy"></i>
+                </a>
+                <a href="{{ url_for('instructor.edit_assignment', assignment_id=a.id) }}"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="bi bi-pencil"></i>
+                </a>
+                {# Exclude / restore from section #}
+                <form method="POST"
+                      action="{{ url_for('instructor.section_exclude_assignment', section_id=section.id, assignment_id=a.id) }}"
+                      onsubmit="return confirm('Hide this assignment from this section?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger"
+                          title="{% if is_override_add %}Remove section-only assignment{% else %}Hide from this section{% endif %}">
+                    <i class="bi bi-eye-slash"></i>
+                  </button>
+                </form>
+              </div>
             </div>
+
+            {# Per-section due date override form (hidden until the calendar button is clicked) #}
+            <form method="POST"
+                  action="{{ url_for('instructor.section_set_due_date', section_id=section.id, assignment_id=a.id) }}"
+                  id="due-date-form-{{ a.id }}"
+                  class="d-none mt-2 d-flex gap-2 align-items-end">
+              <div>
+                <label class="form-label small mb-1">Due date for this section</label>
+                <select class="form-select form-select-sm" name="due_date_mode"
+                        id="due-date-mode-{{ a.id }}"
+                        onchange="toggleDueDateInput({{ a.id }})">
+                  <option value="inherit" {% if due_mode == 'inherit' %}selected{% endif %}>Use assignment default</option>
+                  <option value="custom" {% if due_mode == 'custom' %}selected{% endif %}>Custom date</option>
+                  <option value="none" {% if due_mode == 'none' %}selected{% endif %}>No due date</option>
+                </select>
+              </div>
+              <div>
+                <input type="datetime-local" class="form-control form-control-sm" name="due_date"
+                       id="due-date-input-{{ a.id }}"
+                       value="{{ so.due_date_override.strftime('%Y-%m-%dT%H:%M') if so and so.due_date_override else '' }}"
+                       {% if due_mode != 'custom' %}disabled{% endif %} />
+              </div>
+              <button type="submit" class="btn btn-sm btn-outline-primary">Save</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleDueDateForm({{ a.id }})">Cancel</button>
+            </form>
           </div>
         {% else %}
           <div class="list-group-item text-muted">
@@ -194,6 +235,17 @@ function submitSectionAdd() {
   // Update action URL with real assignment_id
   form.action = form.action.replace('/0/', '/' + aid + '/');
   form.submit();
+}
+
+function toggleDueDateForm(assignmentId) {
+  const form = document.getElementById('due-date-form-' + assignmentId);
+  form.classList.toggle('d-none');
+}
+
+function toggleDueDateInput(assignmentId) {
+  const mode = document.getElementById('due-date-mode-' + assignmentId).value;
+  const input = document.getElementById('due-date-input-' + assignmentId);
+  input.disabled = (mode !== 'custom');
 }
 </script>
 {% endblock %}

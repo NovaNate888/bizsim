@@ -160,13 +160,26 @@ class Section(db.Model):
         effective = (course_aid_set - excluded) | added
         if not effective:
             return []
-        from sqlalchemy import asc, nullslast
-        return (
+        assignments = (
             Assignment.query
             .filter(Assignment.id.in_(effective), Assignment.is_active == True)
-            .order_by(Assignment.due_date.asc().nullslast())
             .all()
         )
+        for a in assignments:
+            a.section_due_date = self.effective_due_date(a)
+        assignments.sort(key=lambda a: (a.section_due_date is None, a.section_due_date))
+        return assignments
+
+    def effective_due_date(self, assignment):
+        """Return the due date this section should use for `assignment`,
+        accounting for a per-section override (including an explicit
+        "no due date" override)."""
+        override = SectionOverride.query.filter_by(
+            section_id=self.id, assignment_id=assignment.id
+        ).first()
+        if override is not None and override.has_due_date_override:
+            return override.due_date_override
+        return assignment.due_date
 
     def __repr__(self) -> str:
         return f"<Section {self.section_name} course={self.course_id}>"
@@ -210,6 +223,10 @@ SCORING_METRICS = [
 ]
 
 METRIC_CHOICES = [(m[0], m[1]) for m in SCORING_METRICS]
+
+# Sentinel for Assignment.is_past_due() so "no argument passed" (use self.due_date)
+# and "override explicitly says None" (no due date) are distinguishable.
+_UNSET = object()
 
 
 class Assignment(db.Model):
@@ -271,10 +288,11 @@ class Assignment(db.Model):
             "constraint_limit": 150000,
         }
 
-    def is_past_due(self) -> bool:
-        if self.due_date is None:
+    def is_past_due(self, effective_due_date=_UNSET) -> bool:
+        dd = self.due_date if effective_due_date is _UNSET else effective_due_date
+        if dd is None:
             return False
-        return datetime.now(timezone.utc) > self.due_date.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) > dd.replace(tzinfo=timezone.utc)
 
     def linked_course_count(self) -> int:
         return self.course_assignments.filter_by(is_active=True).count()
@@ -339,6 +357,12 @@ class SectionOverride(db.Model):
     # excluded=True  → hide an inherited assignment from this section
     # excluded=False → add an assignment to this section only (not course-wide)
     excluded = db.Column(db.Boolean, default=False, nullable=False)
+    # Per-section due date override.
+    # has_due_date_override=False -> section inherits Assignment.due_date
+    # has_due_date_override=True, due_date_override=<datetime> -> section uses that date
+    # has_due_date_override=True, due_date_override=None -> section explicitly has no due date
+    due_date_override = db.Column(db.DateTime, nullable=True)
+    has_due_date_override = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (

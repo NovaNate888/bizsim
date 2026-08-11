@@ -22,9 +22,9 @@
         <h3 class="fw-bold mb-1">{{ assignment.title }}</h3>
         <div class="d-flex flex-wrap gap-2 mb-3">
           <span class="badge bg-secondary">{{ assignment.metric_label }}</span>
-          {% if assignment.due_date %}
-            <span class="badge {% if assignment.is_past_due() %}bg-danger{% else %}bg-info text-dark{% endif %}">
-              Due {{ assignment.due_date.strftime('%b %d, %Y %I:%M %p') }}
+          {% if effective_due_date %}
+            <span class="badge {% if assignment.is_past_due(effective_due_date) %}bg-danger{% else %}bg-info text-dark{% endif %}">
+              Due {{ effective_due_date.strftime('%b %d, %Y %I:%M %p') }}
             </span>
           {% endif %}
           <span class="badge bg-light text-dark border">
@@ -61,7 +61,7 @@
         <h5 class="mb-0"><i class="bi bi-upload me-1"></i>Submit Predictions</h5>
       </div>
       <div class="card-body">
-        {% if assignment.is_past_due() %}
+        {% if assignment.is_past_due(effective_due_date) %}
           <div class="alert alert-danger mb-0">
             <i class="bi bi-lock me-1"></i>This assignment is closed.
           </div>
