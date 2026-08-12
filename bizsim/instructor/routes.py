@@ -355,18 +355,6 @@ def new_assignment():
         metric = request.form.get("scoring_metric", "rmse")
         target_col = request.form.get("target_column", "").strip()
         max_subs = request.form.get("max_submissions_per_day", type=int, default=3)
-        due_date_str = request.form.get("due_date", "").strip()
-
-        due_date = None
-        if due_date_str:
-            try:
-                due_date = datetime.strptime(due_date_str, "%Y-%m-%dT%H:%M")
-            except ValueError:
-                flash("Invalid due date format.", "danger")
-                return render_template(
-                    "instructor/new_assignment.html",
-                    metric_choices=METRIC_CHOICES,
-                )
 
         if not title:
             flash("Assignment title is required.", "danger")
@@ -394,7 +382,6 @@ def new_assignment():
             scoring_metric=metric,
             target_column=target_col or None,
             max_submissions_per_day=max_subs,
-            due_date=due_date,
             profit_matrix_config=pm_config,
         )
         db.session.add(assignment)
@@ -438,20 +425,6 @@ def edit_assignment(assignment_id: int):
         max_subs = request.form.get("max_submissions_per_day", type=int)
         if max_subs:
             assignment.max_submissions_per_day = max_subs
-
-        due_date_str = request.form.get("due_date", "").strip()
-        if due_date_str:
-            try:
-                assignment.due_date = datetime.strptime(due_date_str, "%Y-%m-%dT%H:%M")
-            except ValueError:
-                flash("Invalid due date.", "danger")
-                return render_template(
-                    "instructor/edit_assignment.html",
-                    assignment=assignment,
-                    metric_choices=METRIC_CHOICES,
-                )
-        else:
-            assignment.due_date = None
 
         assignment.is_active = bool(request.form.get("is_active"))
 

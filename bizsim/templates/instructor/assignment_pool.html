@@ -19,7 +19,6 @@
         <tr>
           <th>Title</th>
           <th>Metric</th>
-          <th>Due Date</th>
           <th>Linked Courses</th>
           <th>Status</th>
           <th></th>
@@ -30,13 +29,6 @@
           <tr>
             <td class="fw-semibold">{{ a.title }}</td>
             <td><span class="badge bg-secondary">{{ a.scoring_metric.upper() }}</span></td>
-            <td>
-              {% if a.due_date %}
-                {{ a.due_date.strftime('%b %d, %Y') }}
-              {% else %}
-                <span class="text-muted">—</span>
-              {% endif %}
-            </td>
             <td>
               <span class="badge bg-info text-dark">{{ a.linked_course_count() }} course(s)</span>
             </td>

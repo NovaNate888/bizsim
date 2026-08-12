@@ -148,8 +148,7 @@
                 {% endif %}
                 <br />
                 <small class="text-muted">
-                  {% if a.due_date %}Due {{ a.due_date.strftime('%b %d, %Y') }}{% else %}No due date{% endif %}
-                  &bull; {{ a.submissions.count() }} submission(s) total
+                  {{ a.submissions.count() }} submission(s) total
                 </small>
               </div>
               <div class="d-flex gap-2">

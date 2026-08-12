@@ -14,7 +14,6 @@
           <th>Title</th>
           <th>Section</th>
           <th>Metric</th>
-          <th>Due Date</th>
           <th>Submissions</th>
           <th>Status</th>
           <th></th>
@@ -29,16 +28,6 @@
               <br />{{ a.section.semester.name }}
             </td>
             <td><span class="badge bg-secondary">{{ a.scoring_metric.upper() }}</span></td>
-            <td class="small">
-              {% if a.due_date %}
-                {{ a.due_date.strftime('%b %d, %Y') }}
-                {% if a.is_past_due() %}
-                  <span class="badge bg-danger ms-1">Closed</span>
-                {% endif %}
-              {% else %}
-                —
-              {% endif %}
-            </td>
             <td>{{ a.submissions.count() }}</td>
             <td>
               {% if a.is_active %}
