@@ -1035,7 +1035,7 @@ def export_grades_csv(section_id: int, assignment_id: int):
             f"{r['raw_score']:.3f}" if r["raw_score"] is not None else "",
             f"{r['z_score']:.3f}" if r["z_score"] is not None else "",
             r["bucket"],
-            f"{r['computed_score']:.2f}" if r["computed_score"] is not None else "",
+            f"{r['computed_score']:.0f}" if r["computed_score"] is not None else "",
             f"{r['final_score']:.2f}" if r["final_score"] is not None else "",
             "Yes" if r["is_manual_override"] else "No",
             r["graded_at"].strftime("%Y-%m-%d %H:%M") if r["graded_at"] else "",

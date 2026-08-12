@@ -98,7 +98,7 @@
               </td>
               <td>
                 {% if row.computed_score is not none %}
-                  {{ "%.2f"|format(row.computed_score) }}
+                  {{ "%.0f"|format(row.computed_score) }}
                 {% else %}
                   <span class="text-muted">—</span>
                 {% endif %}
