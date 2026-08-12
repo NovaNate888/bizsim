@@ -85,6 +85,16 @@
                     {% if section.is_active %}Deactivate{% else %}Activate{% endif %}
                   </button>
                 </form>
+                {% if not section.is_active %}
+                  <form method="POST"
+                        action="{{ url_for('instructor.delete_section', section_id=section.id) }}"
+                        class="d-inline"
+                        onsubmit="return confirm('Permanently delete Section {{ section.section_name }}? This deletes all its enrollments, submissions, and grades. This cannot be undone.');">
+                    <button type="submit" class="btn btn-sm btn-danger">
+                      <i class="bi bi-trash me-1"></i>Delete
+                    </button>
+                  </form>
+                {% endif %}
               </div>
             </div>
           {% endfor %}

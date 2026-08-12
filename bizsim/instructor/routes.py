@@ -831,6 +831,41 @@ def delete_submission(section_id: int, submission_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Delete section (only once deactivated)
+# ---------------------------------------------------------------------------
+
+@instructor_bp.route("/section/<int:section_id>/delete", methods=["POST"])
+@login_required
+@instructor_required
+def delete_section(section_id: int):
+    instr = _get_instructor_or_404()
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
+        abort(403)
+
+    if section.is_active:
+        flash("Deactivate this section before deleting it.", "danger")
+        return redirect(url_for("instructor.course_detail", course_id=section.course_id))
+
+    course_id = section.course_id
+    section_label = f"Section {section.section_name}"
+
+    grade_count = Grade.query.filter_by(section_id=section_id).delete(synchronize_session=False)
+    submission_count = Submission.query.filter_by(section_id=section_id).delete(synchronize_session=False)
+    enrollment_count = Enrollment.query.filter_by(section_id=section_id).delete(synchronize_session=False)
+
+    db.session.delete(section)  # SectionOverride rows cascade automatically
+    db.session.commit()
+
+    flash(
+        f"{section_label} deleted, along with {enrollment_count} enrollment(s), "
+        f"{submission_count} submission(s), and {grade_count} grade(s).",
+        "success",
+    )
+    return redirect(url_for("instructor.course_detail", course_id=course_id))
+
+
+# ---------------------------------------------------------------------------
 # Outlier-based auto-grading
 # ---------------------------------------------------------------------------
 
