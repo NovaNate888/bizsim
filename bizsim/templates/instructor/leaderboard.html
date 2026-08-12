@@ -26,7 +26,13 @@
     </h2>
     <p class="text-muted mb-0">{{ assignment.title }} &mdash; {{ section.full_label }}</p>
   </div>
-  <span class="badge bg-secondary fs-6">{{ assignment.metric_label }}</span>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-secondary fs-6">{{ assignment.metric_label }}</span>
+    <a href="{{ url_for('instructor.grades', section_id=section.id, assignment_id=assignment.id) }}"
+       class="btn btn-outline-info btn-sm">
+      <i class="bi bi-clipboard-data me-1"></i>Grades
+    </a>
+  </div>
 </div>
 
 {# Macro: delete button for a single submission row #}

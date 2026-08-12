@@ -1,8 +1,9 @@
+import csv
 import io
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 
 from flask import (
@@ -12,6 +13,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    Response,
     url_for,
 )
 from flask_login import current_user, login_required
@@ -22,6 +24,7 @@ from models import (
     Course,
     CourseAssignment,
     Enrollment,
+    Grade,
     Instructor,
     METRIC_CHOICES,
     Section,
@@ -34,6 +37,7 @@ from models import (
 
 from . import instructor_bp
 from utils import storage
+from utils.grading import compute_grades
 
 
 # ---------------------------------------------------------------------------
@@ -384,6 +388,7 @@ def new_assignment():
             max_submissions_per_day=max_subs,
             profit_matrix_config=pm_config,
         )
+        _apply_grading_settings(assignment)
         db.session.add(assignment)
         db.session.flush()
 
@@ -425,6 +430,8 @@ def edit_assignment(assignment_id: int):
         max_subs = request.form.get("max_submissions_per_day", type=int)
         if max_subs:
             assignment.max_submissions_per_day = max_subs
+
+        _apply_grading_settings(assignment)
 
         assignment.is_active = bool(request.form.get("is_active"))
 
@@ -754,6 +761,228 @@ def delete_submission(section_id: int, submission_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Outlier-based auto-grading
+# ---------------------------------------------------------------------------
+
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/grade", methods=["POST"])
+@login_required
+@instructor_required
+def run_auto_grade(section_id: int, assignment_id: int):
+    instr = _get_instructor_or_404()
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
+        abort(403)
+    assignment = Assignment.query.get_or_404(assignment_id)
+
+    enrollments = Enrollment.query.filter_by(section_id=section_id).all()
+
+    students = []
+    for enr in enrollments:
+        best = _best_submission_for_section(enr.user_id, assignment_id, section_id, assignment)
+        students.append({"user_id": enr.user_id, "raw_score": best.score if best else None})
+
+    results = compute_grades(
+        students,
+        assignment.higher_is_better,
+        assignment.fence,
+        assignment.k,
+        assignment.grade_range_lower,
+        assignment.grade_range_upper,
+        assignment.absolute_low_score,
+    )
+
+    now = datetime.now(timezone.utc)
+    graded_count = 0
+    skipped_count = 0
+
+    for user_id, r in results.items():
+        grade = Grade.query.filter_by(
+            assignment_id=assignment_id, section_id=section_id, user_id=user_id
+        ).first()
+
+        if grade and grade.is_manual_override:
+            # Refresh raw/z/computed for reference only; leave bucket + final_score untouched.
+            grade.raw_score = next(s["raw_score"] for s in students if s["user_id"] == user_id)
+            grade.z_score = r["z_score"]
+            grade.computed_score = r["computed_score"]
+            skipped_count += 1
+            continue
+
+        if not grade:
+            grade = Grade(assignment_id=assignment_id, section_id=section_id, user_id=user_id)
+            db.session.add(grade)
+
+        grade.raw_score = next(s["raw_score"] for s in students if s["user_id"] == user_id)
+        grade.z_score = r["z_score"]
+        grade.bucket = r["bucket"]
+        grade.computed_score = r["computed_score"]
+        grade.final_score = r["computed_score"]
+        grade.graded_at = now
+        grade.updated_at = now
+        graded_count += 1
+
+    db.session.commit()
+
+    msg = f"Auto-graded {graded_count} student(s)."
+    if skipped_count:
+        msg += f" {skipped_count} manually-overridden grade(s) were left untouched."
+    flash(msg, "success")
+
+    return redirect(url_for("instructor.grades", section_id=section_id, assignment_id=assignment_id))
+
+
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/grades")
+@login_required
+@instructor_required
+def grades(section_id: int, assignment_id: int):
+    instr = _get_instructor_or_404()
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
+        abort(403)
+    assignment = Assignment.query.get_or_404(assignment_id)
+
+    enrollments = Enrollment.query.filter_by(section_id=section_id).all()
+    grades_by_uid = {
+        g.user_id: g
+        for g in Grade.query.filter_by(assignment_id=assignment_id, section_id=section_id).all()
+    }
+
+    rows = []
+    for enr in enrollments:
+        user = enr.user
+        g = grades_by_uid.get(user.id)
+        rows.append({
+            "user_id": user.id,
+            "alias": user.display_name,
+            "email": user.email,
+            "raw_score": g.raw_score if g else None,
+            "z_score": g.z_score if g else None,
+            "bucket": g.bucket if g else "no_submission",
+            "computed_score": g.computed_score if g else None,
+            "final_score": g.final_score if g else None,
+            "is_manual_override": g.is_manual_override if g else False,
+        })
+    rows.sort(key=lambda r: r["alias"].lower())
+
+    return render_template(
+        "instructor/grades.html",
+        section=section,
+        assignment=assignment,
+        rows=rows,
+    )
+
+
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/grades/save", methods=["POST"])
+@login_required
+@instructor_required
+def save_grades(section_id: int, assignment_id: int):
+    instr = _get_instructor_or_404()
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
+        abort(403)
+    Assignment.query.get_or_404(assignment_id)
+
+    now = datetime.now(timezone.utc)
+    changed_count = 0
+
+    for key, value in request.form.items():
+        if not key.startswith("final_score_"):
+            continue
+        value = value.strip()
+        if not value:
+            continue
+        try:
+            new_score = float(value)
+        except ValueError:
+            continue
+
+        user_id = int(key[len("final_score_"):])
+        grade = Grade.query.filter_by(
+            assignment_id=assignment_id, section_id=section_id, user_id=user_id
+        ).first()
+
+        if not grade:
+            grade = Grade(
+                assignment_id=assignment_id, section_id=section_id, user_id=user_id,
+                bucket="manual", graded_at=now,
+            )
+            db.session.add(grade)
+
+        if grade.final_score != new_score:
+            grade.final_score = new_score
+            grade.is_manual_override = True
+            grade.updated_at = now
+            changed_count += 1
+
+    db.session.commit()
+    flash(f"{changed_count} grade(s) updated.", "success")
+    return redirect(url_for("instructor.grades", section_id=section_id, assignment_id=assignment_id))
+
+
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/grades/export.csv")
+@login_required
+@instructor_required
+def export_grades_csv(section_id: int, assignment_id: int):
+    instr = _get_instructor_or_404()
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
+        abort(403)
+    assignment = Assignment.query.get_or_404(assignment_id)
+
+    enrollments = Enrollment.query.filter_by(section_id=section_id).all()
+    grades_by_uid = {
+        g.user_id: g
+        for g in Grade.query.filter_by(assignment_id=assignment_id, section_id=section_id).all()
+    }
+
+    rows = []
+    for enr in enrollments:
+        user = enr.user
+        g = grades_by_uid.get(user.id)
+        rows.append({
+            "alias": user.display_name,
+            "email": user.email,
+            "raw_score": g.raw_score if g else None,
+            "z_score": g.z_score if g else None,
+            "bucket": g.bucket if g else "no_submission",
+            "computed_score": g.computed_score if g else None,
+            "final_score": g.final_score if g else None,
+            "is_manual_override": g.is_manual_override if g else False,
+            "graded_at": g.graded_at if g else None,
+        })
+    rows.sort(key=lambda r: r["alias"].lower())
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "Alias", "Email", "Raw Score", "Z-Score", "Bucket", "Computed Grade",
+        "Final Grade", "Manually Overridden", "Graded At",
+    ])
+    for r in rows:
+        writer.writerow([
+            r["alias"],
+            r["email"],
+            f"{r['raw_score']:.3f}" if r["raw_score"] is not None else "",
+            f"{r['z_score']:.3f}" if r["z_score"] is not None else "",
+            r["bucket"],
+            f"{r['computed_score']:.2f}" if r["computed_score"] is not None else "",
+            f"{r['final_score']:.2f}" if r["final_score"] is not None else "",
+            "Yes" if r["is_manual_override"] else "No",
+            r["graded_at"].strftime("%Y-%m-%d %H:%M") if r["graded_at"] else "",
+        ])
+
+    safe_title = "".join(c if c.isalnum() else "_" for c in assignment.title).strip("_")
+    safe_section = "".join(c if c.isalnum() else "_" for c in section.section_name).strip("_")
+    filename = f"grades_{safe_title}_section_{safe_section}.csv"
+
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Student enrollment management
 # ---------------------------------------------------------------------------
 
@@ -918,6 +1147,19 @@ def _allowed_file(filename: str) -> bool:
         "." in filename
         and filename.rsplit(".", 1)[1].lower() in {"csv"}
     )
+
+
+def _apply_grading_settings(assignment: Assignment) -> None:
+    """Parse the five auto-grading fields from request.form onto `assignment`,
+    silently keeping the existing/default value for any blank or invalid field."""
+    for field in ("fence", "k", "grade_range_lower", "grade_range_upper", "absolute_low_score"):
+        raw = request.form.get(field, "").strip()
+        if not raw:
+            continue
+        try:
+            setattr(assignment, field, float(raw))
+        except ValueError:
+            pass
 
 
 def _save_assignment_files(assignment: Assignment) -> None:

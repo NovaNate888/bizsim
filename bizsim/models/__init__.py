@@ -11,6 +11,7 @@ from .models import (
     CourseAssignment,
     SectionOverride,
     Submission,
+    Grade,
     METRIC_CHOICES,
     SCORING_METRICS,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "CourseAssignment",
     "SectionOverride",
     "Submission",
+    "Grade",
     "METRIC_CHOICES",
     "SCORING_METRICS",
 ]

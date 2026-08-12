@@ -96,6 +96,12 @@ def _run_schema_migrations(db) -> None:
         # Phase 3: per-section due date overrides
         "ALTER TABLE section_overrides ADD COLUMN due_date_override TIMESTAMP",
         "ALTER TABLE section_overrides ADD COLUMN has_due_date_override BOOLEAN DEFAULT FALSE NOT NULL",
+        # Phase 4: outlier-based auto-grading settings
+        "ALTER TABLE assignments ADD COLUMN fence DOUBLE PRECISION DEFAULT 3.5 NOT NULL",
+        "ALTER TABLE assignments ADD COLUMN k DOUBLE PRECISION DEFAULT 0.8 NOT NULL",
+        "ALTER TABLE assignments ADD COLUMN grade_range_lower DOUBLE PRECISION DEFAULT 80.0 NOT NULL",
+        "ALTER TABLE assignments ADD COLUMN grade_range_upper DOUBLE PRECISION DEFAULT 95.0 NOT NULL",
+        "ALTER TABLE assignments ADD COLUMN absolute_low_score DOUBLE PRECISION DEFAULT 70.0 NOT NULL",
     ]
     for sql in new_columns:
         try:

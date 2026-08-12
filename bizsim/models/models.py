@@ -242,6 +242,12 @@ class Assignment(db.Model):
     scoring_metric = db.Column(db.String(32), nullable=False, default="rmse")
     target_column = db.Column(db.String(128), nullable=True)
     max_submissions_per_day = db.Column(db.Integer, default=3, nullable=False)
+    # Outlier-based auto-grading settings (see utils/grading.py)
+    fence = db.Column(db.Float, default=3.5, nullable=False)
+    k = db.Column(db.Float, default=0.8, nullable=False)
+    grade_range_lower = db.Column(db.Float, default=80.0, nullable=False)
+    grade_range_upper = db.Column(db.Float, default=95.0, nullable=False)
+    absolute_low_score = db.Column(db.Float, default=70.0, nullable=False)
     due_date = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     profit_matrix_config = db.Column(db.Text, nullable=True)
@@ -411,3 +417,37 @@ class Submission(db.Model):
 
     def __repr__(self) -> str:
         return f"<Submission user={self.user_id} assignment={self.assignment_id} score={self.score}>"
+
+
+# ---------------------------------------------------------------------------
+# Grade — outlier-based auto-graded (or manually-entered) course grade for a
+# student on an assignment, scoped to a section
+# ---------------------------------------------------------------------------
+
+class Grade(db.Model):
+    __tablename__ = "grades"
+
+    id = db.Column(db.Integer, primary_key=True)
+    assignment_id = db.Column(db.Integer, db.ForeignKey("assignments.id"), nullable=False)
+    section_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    raw_score = db.Column(db.Float, nullable=True)
+    z_score = db.Column(db.Float, nullable=True)
+    # "ordinary" | "low_outlier" | "high_outlier" | "no_submission" | "manual"
+    bucket = db.Column(db.String(32), nullable=False, default="no_submission")
+    computed_score = db.Column(db.Float, nullable=True)
+    final_score = db.Column(db.Float, nullable=True)
+    is_manual_override = db.Column(db.Boolean, default=False, nullable=False)
+    graded_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("assignment_id", "section_id", "user_id", name="uq_grade"),
+    )
+
+    assignment = db.relationship("Assignment")
+    section = db.relationship("Section")
+    user = db.relationship("User")
+
+    def __repr__(self) -> str:
+        return f"<Grade assignment={self.assignment_id} section={self.section_id} user={self.user_id} final={self.final_score}>"

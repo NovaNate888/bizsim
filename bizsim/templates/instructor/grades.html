@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Grades — {{ assignment.title }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('instructor.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('instructor.course_detail', course_id=section.course_id) }}">
+        {{ section.course.display_name }}
+      </a>
+    </li>
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('instructor.section_detail', section_id=section.id) }}">
+        Section {{ section.section_name }}
+      </a>
+    </li>
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('instructor.leaderboard', section_id=section.id, assignment_id=assignment.id) }}">
+        Leaderboard
+      </a>
+    </li>
+    <li class="breadcrumb-item active">Grades</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <h2 class="fw-bold mb-1">
+      <i class="bi bi-clipboard-data text-info me-2"></i>Grades
+    </h2>
+    <p class="text-muted mb-0">{{ assignment.title }} &mdash; {{ section.full_label }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <form method="POST"
+          action="{{ url_for('instructor.run_auto_grade', section_id=section.id, assignment_id=assignment.id) }}"
+          onsubmit="return confirm('Run auto-grade for this section? This will overwrite any grade that hasn\'t been manually edited.');"
+          class="d-inline">
+      <button type="submit" class="btn btn-info">
+        <i class="bi bi-magic me-1"></i>Run Auto-Grade
+      </button>
+    </form>
+    <a href="{{ url_for('instructor.export_grades_csv', section_id=section.id, assignment_id=assignment.id) }}"
+       class="btn btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+</div>
+
+{% if rows %}
+  <form method="POST"
+        action="{{ url_for('instructor.save_grades', section_id=section.id, assignment_id=assignment.id) }}">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle small">
+        <thead class="table-light">
+          <tr>
+            <th>Alias</th>
+            <th>Email</th>
+            <th>Raw Score</th>
+            <th>Z-Score</th>
+            <th>Bucket</th>
+            <th>Computed Grade</th>
+            <th>Final Grade</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td class="fw-semibold">{{ row.alias }}</td>
+              <td class="text-muted">{{ row.email }}</td>
+              <td>
+                {% if row.raw_score is not none %}
+                  {{ "%.4f"|format(row.raw_score) }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.z_score is not none %}
+                  {{ "%.3f"|format(row.z_score) }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.bucket == 'ordinary' %}
+                  <span class="badge bg-secondary">Ordinary</span>
+                {% elif row.bucket == 'low_outlier' %}
+                  <span class="badge bg-danger">Low Outlier</span>
+                {% elif row.bucket == 'high_outlier' %}
+                  <span class="badge bg-primary">High Outlier</span>
+                  <br /><small class="text-muted">Contact required</small>
+                {% elif row.bucket == 'manual' %}
+                  <span class="badge bg-info text-dark">Manual</span>
+                {% else %}
+                  <span class="badge bg-light text-muted border">No Submission</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.computed_score is not none %}
+                  {{ "%.2f"|format(row.computed_score) }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="d-flex align-items-center gap-1">
+                  <input type="number" step="any" class="form-control form-control-sm"
+                         style="width: 6.5rem;"
+                         name="final_score_{{ row.user_id }}"
+                         value="{{ row.final_score if row.final_score is not none else '' }}" />
+                  {% if row.is_manual_override %}
+                    <span class="text-warning" title="Manually edited">
+                      <i class="bi bi-pencil-fill"></i>
+                    </span>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit" class="btn btn-primary fw-semibold">
+      <i class="bi bi-save me-1"></i>Save All Grades
+    </button>
+  </form>
+{% else %}
+  <div class="alert alert-info">No students enrolled.</div>
+{% endif %}
+{% endblock %}

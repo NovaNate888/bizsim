@@ -52,6 +52,47 @@
         </div>
       </div>
 
+      <!-- Auto-Grading settings -->
+      <div class="card border-info mb-3">
+        <div class="card-header bg-info bg-opacity-10 fw-semibold">
+          Auto-Grading Settings
+        </div>
+        <div class="card-body">
+          <p class="form-text mt-0">
+            Used by the section leaderboard's "Run Auto-Grade" tool to convert raw scores into
+            course grades via median/MAD-based outlier detection. These are pool-level
+            defaults — they don't gate submissions.
+          </p>
+          <div class="row g-3">
+            <div class="col-sm-4 col-md-2">
+              <label class="form-label">Fence (z)</label>
+              <input type="number" class="form-control" name="fence"
+                     value="{{ assignment.fence }}" step="any" />
+            </div>
+            <div class="col-sm-4 col-md-2">
+              <label class="form-label">k (decay)</label>
+              <input type="number" class="form-control" name="k"
+                     value="{{ assignment.k }}" step="any" />
+            </div>
+            <div class="col-sm-4 col-md-2">
+              <label class="form-label">Grade Range Lower</label>
+              <input type="number" class="form-control" name="grade_range_lower"
+                     value="{{ assignment.grade_range_lower }}" step="any" />
+            </div>
+            <div class="col-sm-4 col-md-2">
+              <label class="form-label">Grade Range Upper</label>
+              <input type="number" class="form-control" name="grade_range_upper"
+                     value="{{ assignment.grade_range_upper }}" step="any" />
+            </div>
+            <div class="col-sm-4 col-md-2">
+              <label class="form-label">Absolute Low Score</label>
+              <input type="number" class="form-control" name="absolute_low_score"
+                     value="{{ assignment.absolute_low_score }}" step="any" />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Profit Matrix config -->
       {% set pm = assignment.profit_matrix_cfg %}
       <div id="profit-matrix-config" class="card border-warning mb-3"
