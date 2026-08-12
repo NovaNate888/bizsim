@@ -27,6 +27,14 @@ def _load_csv(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def _find_id_column(columns) -> str | None:
+    """Case-insensitive lookup for a column literally named 'id' (ignoring case)."""
+    for c in columns:
+        if str(c).strip().lower() == "id":
+            return c
+    return None
+
+
 def _coerce_predictions(
     gt: pd.DataFrame,
     sub: pd.DataFrame,
@@ -48,9 +56,15 @@ def _coerce_predictions(
             raise ValueError("Submission CSV has no usable prediction column.")
         pred_col = non_id[0]
 
-    if "id" in gt.columns and "id" in sub.columns:
-        sub_aligned = sub[["id", pred_col]].rename(columns={pred_col: "__pred__"})
-        merged = gt[["id", target_col]].merge(sub_aligned, on="id", how="left")
+    gt_id_col = _find_id_column(gt.columns)
+    sub_id_col = _find_id_column(sub.columns)
+
+    if gt_id_col and sub_id_col:
+        sub_aligned = sub[[sub_id_col, pred_col]].rename(
+            columns={sub_id_col: "__id__", pred_col: "__pred__"}
+        )
+        gt_aligned = gt[[gt_id_col, target_col]].rename(columns={gt_id_col: "__id__"})
+        merged = gt_aligned.merge(sub_aligned, on="__id__", how="left")
         y_true = merged[target_col].values
         y_pred = merged["__pred__"].values
     else:
@@ -86,9 +100,15 @@ def _coerce_predictions_labels(
             raise ValueError("Submission CSV has no usable prediction column.")
         pred_col = non_id[0]
 
-    if "id" in gt.columns and "id" in sub.columns:
-        sub_aligned = sub[["id", pred_col]].rename(columns={pred_col: "__pred__"})
-        merged = gt[["id", target_col]].merge(sub_aligned, on="id", how="left")
+    gt_id_col = _find_id_column(gt.columns)
+    sub_id_col = _find_id_column(sub.columns)
+
+    if gt_id_col and sub_id_col:
+        sub_aligned = sub[[sub_id_col, pred_col]].rename(
+            columns={sub_id_col: "__id__", pred_col: "__pred__"}
+        )
+        gt_aligned = gt[[gt_id_col, target_col]].rename(columns={gt_id_col: "__id__"})
+        merged = gt_aligned.merge(sub_aligned, on="__id__", how="left")
         y_true = merged[target_col].values
         y_pred = merged["__pred__"].values
     else:
