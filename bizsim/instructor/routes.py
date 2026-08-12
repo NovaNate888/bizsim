@@ -529,7 +529,7 @@ def test_grade(assignment_id: int):
             for i, r in results.items()
         ]
         rows.sort(
-            key=lambda row: (row["computed_score"] is None, -(row["computed_score"] or 0))
+            key=lambda row: (row["z_score"] is None, -(row["z_score"] if row["z_score"] is not None else 0))
         )
 
         summary = {
