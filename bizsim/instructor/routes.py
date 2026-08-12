@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import os
+import random
 import uuid
 from datetime import datetime, timezone
 from functools import wraps
@@ -476,6 +477,75 @@ def edit_assignment(assignment_id: int):
         assignment=assignment,
         metric_choices=METRIC_CHOICES,
         existing_files=existing_files,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test grading — sanity-check fence/k/grade-range settings against synthetic
+# in-memory students (nothing is saved)
+# ---------------------------------------------------------------------------
+
+@instructor_bp.route("/assignment/<int:assignment_id>/test-grade", methods=["GET", "POST"])
+@login_required
+@instructor_required
+def test_grade(assignment_id: int):
+    instr = _get_instructor_or_404()
+    assignment = Assignment.query.get_or_404(assignment_id)
+    if not _owns_assignment(instr, assignment):
+        abort(403)
+
+    rows = None
+    summary = None
+    n, mean, std = 25, 0.5, 0.1
+
+    if request.method == "POST":
+        n = request.form.get("n", type=int) or 25
+        mean = request.form.get("mean", type=float)
+        mean = 0.5 if mean is None else mean
+        std = request.form.get("std", type=float)
+        std = 0.1 if std is None else std
+        n = max(1, min(n, 500))
+
+        students = []
+        for i in range(n):
+            raw = random.gauss(mean, std)
+            raw = max(0.0, min(1.0, raw))
+            students.append({"user_id": i, "raw_score": raw})
+
+        results = compute_grades(
+            students, True, assignment.fence, assignment.k,
+            assignment.grade_range_lower, assignment.grade_range_upper,
+            assignment.absolute_low_score,
+        )
+
+        rows = [
+            {
+                "alias": f"Test Student {i + 1}",
+                "raw_score": students[i]["raw_score"],
+                "z_score": r["z_score"],
+                "bucket": r["bucket"],
+                "computed_score": r["computed_score"],
+            }
+            for i, r in results.items()
+        ]
+        rows.sort(
+            key=lambda row: (row["computed_score"] is None, -(row["computed_score"] or 0))
+        )
+
+        summary = {
+            "ordinary": sum(1 for row in rows if row["bucket"] == "ordinary"),
+            "low_outlier": sum(1 for row in rows if row["bucket"] == "low_outlier"),
+            "high_outlier": sum(1 for row in rows if row["bucket"] == "high_outlier"),
+        }
+
+    return render_template(
+        "instructor/test_grade.html",
+        assignment=assignment,
+        rows=rows,
+        summary=summary,
+        n=n,
+        mean=mean,
+        std=std,
     )
 
 

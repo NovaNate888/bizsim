@@ -90,6 +90,15 @@
                      value="{{ assignment.absolute_low_score }}" step="any" />
             </div>
           </div>
+          <hr />
+          <a href="{{ url_for('instructor.test_grade', assignment_id=assignment.id) }}"
+             class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-clipboard-data me-1"></i>Test Grading With Sample Data
+          </a>
+          <div class="form-text">
+            Runs the current fence/k/grade-range settings above against randomly generated
+            sample students — nothing is saved.
+          </div>
         </div>
       </div>
 

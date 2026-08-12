@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Test Grading — {{ assignment.title }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('instructor.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('instructor.assignments') }}">Assignments</a></li>
+    <li class="breadcrumb-item active">Test Grading</li>
+  </ol>
+</nav>
+
+<div class="mb-4">
+  <h2 class="fw-bold mb-1">
+    <i class="bi bi-clipboard-data text-primary me-2"></i>Test Grading
+  </h2>
+  <p class="text-muted mb-0">{{ assignment.title }}</p>
+</div>
+
+<div class="alert alert-warning">
+  <i class="bi bi-flask me-1"></i>
+  <strong>Test Mode</strong> — synthetic data, nothing is saved.
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-body">
+    <form method="POST">
+      <div class="row g-3 align-items-end">
+        <div class="col-sm-4 col-md-3">
+          <label class="form-label fw-semibold">Number of Sample Students</label>
+          <input type="number" class="form-control" name="n" value="{{ n }}" min="1" max="500" />
+        </div>
+        <div class="col-sm-4 col-md-3">
+          <label class="form-label fw-semibold">Mean Performance Score</label>
+          <input type="number" class="form-control" name="mean" value="{{ mean }}" step="any" />
+        </div>
+        <div class="col-sm-4 col-md-3">
+          <label class="form-label fw-semibold">Standard Deviation</label>
+          <input type="number" class="form-control" name="std" value="{{ std }}" step="any" />
+        </div>
+        <div class="col-sm-12 col-md-3">
+          <button type="submit" class="btn btn-primary fw-semibold w-100">
+            <i class="bi bi-shuffle me-1"></i>Generate Test Data
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if rows is not none %}
+  <p class="text-muted mb-2">
+    {{ summary.ordinary }} ordinary, {{ summary.low_outlier }} low outlier, {{ summary.high_outlier }} high outlier
+  </p>
+
+  {% if rows %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle small">
+        <thead class="table-light">
+          <tr>
+            <th>Alias</th>
+            <th>Raw Score</th>
+            <th>Z-Score</th>
+            <th>Bucket</th>
+            <th>Computed Grade</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td class="fw-semibold">{{ row.alias }}</td>
+              <td>
+                {% if row.raw_score is not none %}
+                  {{ "%.3f"|format(row.raw_score) }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.z_score is not none %}
+                  {{ "%.3f"|format(row.z_score) }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.bucket == 'ordinary' %}
+                  <span class="badge bg-secondary">Ordinary</span>
+                {% elif row.bucket == 'low_outlier' %}
+                  <span class="badge bg-danger">Low Outlier</span>
+                {% elif row.bucket == 'high_outlier' %}
+                  <span class="badge bg-primary">High Outlier</span>
+                  <br /><small class="text-muted">Contact required</small>
+                {% elif row.bucket == 'manual' %}
+                  <span class="badge bg-info text-dark">Manual</span>
+                {% else %}
+                  <span class="badge bg-light text-muted border">No Submission</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.computed_score is not none %}
+                  {{ "%.2f"|format(row.computed_score) }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="alert alert-info">No sample students generated.</div>
+  {% endif %}
+{% endif %}
+{% endblock %}
