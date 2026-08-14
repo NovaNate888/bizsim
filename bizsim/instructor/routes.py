@@ -1060,13 +1060,16 @@ def export_grades_csv(section_id: int, assignment_id: int):
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
-        "Alias", "Email", "Raw Score", "Z-Score", "Bucket", "Computed Grade",
+        "Alias", "Email", "Student ID", "Raw Score", "Z-Score", "Bucket", "Computed Grade",
         "Final Grade", "Manually Overridden", "Graded At",
     ])
     for r in rows:
+        email_prefix = r["email"].split("@")[0] if r["email"] else ""
+        student_id = f"#{email_prefix}" if email_prefix else ""
         writer.writerow([
             r["alias"],
             r["email"],
+            student_id,
             f"{r['raw_score']:.3f}" if r["raw_score"] is not None else "",
             f"{r['z_score']:.3f}" if r["z_score"] is not None else "",
             r["bucket"],
