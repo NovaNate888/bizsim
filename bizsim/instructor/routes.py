@@ -202,6 +202,19 @@ def courses():
             db.session.commit()
             flash(f"Course '{course.name}' updated.", "info")
 
+        elif action == "delete":
+            course_id = request.form.get("course_id", type=int)
+            course = Course.query.get_or_404(course_id)
+            if not _owns_course(instr, course):
+                abort(403)
+            if course.sections.count() > 0:
+                flash("Delete all sections before deleting this course.", "danger")
+            else:
+                course_name = course.name
+                db.session.delete(course)  # CourseAssignment rows cascade automatically
+                db.session.commit()
+                flash(f"Course '{course_name}' deleted.", "success")
+
         return redirect(url_for("instructor.courses"))
 
     all_courses = instr.courses.order_by(Course.name.asc()).all() if instr else []
@@ -853,8 +866,24 @@ def delete_section(section_id: int):
     grade_count = Grade.query.filter_by(section_id=section_id).delete(synchronize_session=False)
     submission_count = Submission.query.filter_by(section_id=section_id).delete(synchronize_session=False)
     enrollment_count = Enrollment.query.filter_by(section_id=section_id).delete(synchronize_session=False)
+    SectionOverride.query.filter_by(section_id=section_id).delete(synchronize_session=False)
 
-    db.session.delete(section)  # SectionOverride rows cascade automatically
+    # Legacy pre-restructure Assignment rows can still carry a `section_id` FK
+    # pointing here. That column isn't on the current Assignment model (it was
+    # replaced by instructor_id + CourseAssignment), so the ORM can't null it
+    # via a mapped relationship, and it's what actually caused this route's
+    # ForeignKeyViolation in production. Clear it directly with raw SQL, but
+    # only if the column still exists — fresh installs created after the
+    # restructure never had it, so check first rather than assume.
+    from sqlalchemy import inspect, text
+    legacy_columns = {c["name"] for c in inspect(db.engine).get_columns("assignments")}
+    if "section_id" in legacy_columns:
+        db.session.execute(
+            text("UPDATE assignments SET section_id = NULL WHERE section_id = :sid"),
+            {"sid": section_id},
+        )
+
+    db.session.delete(section)
     db.session.commit()
 
     flash(

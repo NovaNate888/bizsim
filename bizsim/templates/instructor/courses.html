@@ -66,6 +66,16 @@
                       {% if course.is_active %}Archive{% else %}Restore{% endif %}
                     </button>
                   </form>
+                  {% if course.sections.count() == 0 %}
+                    <form method="POST" class="d-inline"
+                          onsubmit="return confirm('Permanently delete {{ course.display_name }}? This cannot be undone.');">
+                      <input type="hidden" name="action" value="delete" />
+                      <input type="hidden" name="course_id" value="{{ course.id }}" />
+                      <button type="submit" class="btn btn-sm btn-danger">
+                        <i class="bi bi-trash me-1"></i>Delete
+                      </button>
+                    </form>
+                  {% endif %}
                 </div>
               </div>
             </div>
