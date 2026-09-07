@@ -60,31 +60,48 @@
           Auto-Grading Settings
         </div>
         <div class="card-body">
-          <p class="form-text mt-0">
-            Used by the section leaderboard's "Run Auto-Grade" tool to convert raw scores into
-            course grades via median/MAD-based outlier detection. These are pool-level
-            defaults — they don't gate submissions.
-          </p>
-          <div class="row g-3">
-            <div class="col-sm-4 col-md-2">
-              <label class="form-label">Fence (z)</label>
-              <input type="number" class="form-control" name="fence" value="2.0" step="any" />
+          <div class="mb-3">
+            <label class="form-label">Grading Type</label>
+            <select class="form-select" name="grading_type" id="grading_type">
+              <option value="performance" {% if not assignment or assignment.grading_type == 'performance' %}selected{% endif %}>
+                Performance (outlier-based grading)
+              </option>
+              <option value="completion" {% if assignment and assignment.grading_type == 'completion' %}selected{% endif %}>
+                Completion (100 for submitted, 0 for not submitted)
+              </option>
+            </select>
+            <div class="form-text">
+              Completion assignments ignore the settings below — everyone who submitted anything
+              gets 100, everyone who didn't gets 0.
             </div>
-            <div class="col-sm-4 col-md-2">
-              <label class="form-label">k (decay)</label>
-              <input type="number" class="form-control" name="k" value="0.4" step="any" />
-            </div>
-            <div class="col-sm-4 col-md-2">
-              <label class="form-label">Grade Range Lower</label>
-              <input type="number" class="form-control" name="grade_range_lower" value="80.0" step="any" />
-            </div>
-            <div class="col-sm-4 col-md-2">
-              <label class="form-label">Grade Range Upper</label>
-              <input type="number" class="form-control" name="grade_range_upper" value="96.0" step="any" />
-            </div>
-            <div class="col-sm-4 col-md-2">
-              <label class="form-label">Absolute Low Score</label>
-              <input type="number" class="form-control" name="absolute_low_score" value="60.0" step="any" />
+          </div>
+          <div id="performance-grading-fields">
+            <p class="form-text mt-0">
+              Used by the section leaderboard's "Run Auto-Grade" tool to convert raw scores into
+              course grades via median/MAD-based outlier detection. These are pool-level
+              defaults — they don't gate submissions.
+            </p>
+            <div class="row g-3">
+              <div class="col-sm-4 col-md-2">
+                <label class="form-label">Fence (z)</label>
+                <input type="number" class="form-control" name="fence" value="2.0" step="any" />
+              </div>
+              <div class="col-sm-4 col-md-2">
+                <label class="form-label">k (decay)</label>
+                <input type="number" class="form-control" name="k" value="0.4" step="any" />
+              </div>
+              <div class="col-sm-4 col-md-2">
+                <label class="form-label">Grade Range Lower</label>
+                <input type="number" class="form-control" name="grade_range_lower" value="80.0" step="any" />
+              </div>
+              <div class="col-sm-4 col-md-2">
+                <label class="form-label">Grade Range Upper</label>
+                <input type="number" class="form-control" name="grade_range_upper" value="96.0" step="any" />
+              </div>
+              <div class="col-sm-4 col-md-2">
+                <label class="form-label">Absolute Low Score</label>
+                <input type="number" class="form-control" name="absolute_low_score" value="60.0" step="any" />
+              </div>
             </div>
           </div>
         </div>
@@ -184,6 +201,14 @@
   }
   metricSelect.addEventListener('change', togglePM);
   togglePM();
+
+  // Grading type toggle
+  const gradingTypeSelect = document.getElementById('grading_type');
+  const perfFields = document.getElementById('performance-grading-fields');
+  function toggleGradingFields() {
+    perfFields.style.display = gradingTypeSelect.value === 'completion' ? 'none' : '';
+  }
+  gradingTypeSelect.addEventListener('change', toggleGradingFields);
 
   // Dynamic file rows
   document.getElementById('add-file-row').addEventListener('click', function () {

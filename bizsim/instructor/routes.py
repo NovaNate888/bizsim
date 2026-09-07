@@ -402,6 +402,11 @@ def new_assignment():
             max_submissions_per_day=max_subs,
             profit_matrix_config=pm_config,
         )
+        grading_type = request.form.get("grading_type", "performance")
+        if grading_type not in ("performance", "completion"):
+            grading_type = "performance"
+        assignment.grading_type = grading_type
+
         _apply_grading_settings(assignment)
         db.session.add(assignment)
         db.session.flush()
@@ -444,6 +449,11 @@ def edit_assignment(assignment_id: int):
         max_subs = request.form.get("max_submissions_per_day", type=int)
         if max_subs:
             assignment.max_submissions_per_day = max_subs
+
+        grading_type = request.form.get("grading_type", "performance")
+        if grading_type not in ("performance", "completion"):
+            grading_type = "performance"
+        assignment.grading_type = grading_type
 
         _apply_grading_settings(assignment)
 
@@ -915,15 +925,23 @@ def run_auto_grade(section_id: int, assignment_id: int):
         best = _best_submission_for_section(enr.user_id, assignment_id, section_id, assignment)
         students.append({"user_id": enr.user_id, "raw_score": best.score if best else None})
 
-    results = compute_grades(
-        students,
-        assignment.higher_is_better,
-        assignment.fence,
-        assignment.k,
-        assignment.grade_range_lower,
-        assignment.grade_range_upper,
-        assignment.absolute_low_score,
-    )
+    if assignment.grading_type == "completion":
+        results = {}
+        for s in students:
+            if s["raw_score"] is not None:
+                results[s["user_id"]] = {"z_score": None, "bucket": "complete", "computed_score": 100.0}
+            else:
+                results[s["user_id"]] = {"z_score": None, "bucket": "incomplete", "computed_score": 0.0}
+    else:
+        results = compute_grades(
+            students,
+            assignment.higher_is_better,
+            assignment.fence,
+            assignment.k,
+            assignment.grade_range_lower,
+            assignment.grade_range_upper,
+            assignment.absolute_low_score,
+        )
 
     now = datetime.now(timezone.utc)
     graded_count = 0

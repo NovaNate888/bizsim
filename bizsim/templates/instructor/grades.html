@@ -92,6 +92,10 @@
                   <br /><small class="text-muted">Contact required</small>
                 {% elif row.bucket == 'manual' %}
                   <span class="badge bg-info text-dark">Manual</span>
+                {% elif row.bucket == 'complete' %}
+                  <span class="badge bg-success">Complete</span>
+                {% elif row.bucket == 'incomplete' %}
+                  <span class="badge bg-light text-muted border">Incomplete</span>
                 {% else %}
                   <span class="badge bg-light text-muted border">No Submission</span>
                 {% endif %}
