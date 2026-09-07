@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -294,11 +294,12 @@ class Assignment(db.Model):
             "constraint_limit": 150000,
         }
 
-    def is_past_due(self, effective_due_date=_UNSET) -> bool:
+    def is_past_due(self, effective_due_date=_UNSET, grace_hours: float = 12) -> bool:
         dd = self.due_date if effective_due_date is _UNSET else effective_due_date
         if dd is None:
             return False
-        return datetime.now(timezone.utc) > dd.replace(tzinfo=timezone.utc)
+        deadline = dd.replace(tzinfo=timezone.utc) + timedelta(hours=grace_hours)
+        return datetime.now(timezone.utc) > deadline
 
     def linked_course_count(self) -> int:
         return self.course_assignments.filter_by(is_active=True).count()
