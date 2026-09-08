@@ -1,7 +1,6 @@
 import io
 import json as _json
 import uuid
-from datetime import datetime, timezone
 
 from flask import (
     abort,
@@ -16,6 +15,7 @@ from flask_login import current_user, login_required
 
 from models import Assignment, AssignmentFile, Enrollment, Section, Submission, db
 from utils import storage
+from utils.tz import local_midnight_today_utc_naive
 from utils.scoring import (
     score_accuracy_detail_from_streams,
     score_from_streams,
@@ -453,9 +453,7 @@ def leaderboard(section_id: int, assignment_id: int):
 # ---------------------------------------------------------------------------
 
 def _submissions_today(user_id: int, assignment_id: int, section_id: int) -> int:
-    today_start = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    today_start = local_midnight_today_utc_naive()
     return (
         Submission.query
         .filter(

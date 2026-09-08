@@ -19,6 +19,8 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
+from utils.tz import local_input_to_utc_naive
+
 from models import (
     Assignment,
     AssignmentFile,
@@ -737,7 +739,8 @@ def section_set_due_date(section_id: int, assignment_id: int):
             flash("Please provide a valid date/time.", "danger")
             return redirect(url_for("instructor.section_detail", section_id=section_id))
         try:
-            parsed = datetime.strptime(due_date_str, "%Y-%m-%dT%H:%M")
+            naive_local = datetime.strptime(due_date_str, "%Y-%m-%dT%H:%M")
+            parsed = local_input_to_utc_naive(naive_local)
         except ValueError:
             flash("Please provide a valid date/time.", "danger")
             return redirect(url_for("instructor.section_detail", section_id=section_id))

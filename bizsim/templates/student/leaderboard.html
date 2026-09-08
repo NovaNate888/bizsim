@@ -194,7 +194,7 @@
               </td>
               <td class="text-muted small">
                 {% if entry.submitted_at %}
-                  {{ entry.submitted_at.strftime('%b %d, %Y %I:%M %p') }}
+                  {{ entry.submitted_at|local_time }}
                 {% else %}
                   —
                 {% endif %}

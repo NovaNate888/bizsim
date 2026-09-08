@@ -124,7 +124,7 @@
                 {% endif %}
                 <br />
                 <small class="text-muted">
-                  {% if a.section_due_date %}Due {{ a.section_due_date.strftime('%b %d, %Y') }}{% else %}No due date{% endif %}
+                  {% if a.section_due_date %}Due {{ (a.section_due_date|to_local).strftime('%b %d, %Y') }}{% else %}No due date{% endif %}
                   &bull; {{ a.submissions.count() }} submission(s)
                 </small>
               </div>
@@ -172,7 +172,7 @@
               <div>
                 <input type="datetime-local" class="form-control form-control-sm" name="due_date"
                        id="due-date-input-{{ a.id }}"
-                       value="{{ so.due_date_override.strftime('%Y-%m-%dT%H:%M') if so and so.due_date_override else '' }}"
+                       value="{{ (so.due_date_override|to_local).strftime('%Y-%m-%dT%H:%M') if so and so.due_date_override else '' }}"
                        {% if due_mode != 'custom' %}disabled{% endif %} />
               </div>
               <button type="submit" class="btn btn-sm btn-outline-primary">Save</button>

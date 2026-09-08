@@ -24,7 +24,7 @@
           <span class="badge bg-secondary">{{ assignment.metric_label }}</span>
           {% if effective_due_date %}
             <span class="badge {% if assignment.is_past_due(effective_due_date) %}bg-danger{% else %}bg-info text-dark{% endif %}">
-              Due {{ effective_due_date.strftime('%b %d, %Y %I:%M %p') }}
+              Due {{ effective_due_date|local_time }}
             </span>
           {% endif %}
           <span class="badge bg-light text-dark border">
@@ -201,7 +201,7 @@
                       </td>
                     {% endif %}
                     <td class="text-muted small">
-                      {{ sub.submitted_at.strftime('%m/%d %I:%M %p') }}
+                      {{ sub.submitted_at|local_time('%m/%d %I:%M %p') }}
                     </td>
                   </tr>
                 {% endfor %}

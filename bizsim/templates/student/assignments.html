@@ -40,7 +40,7 @@
             <td><span class="badge bg-secondary">{{ a.scoring_metric.upper() }}</span></td>
             <td>
               {% if a.section_due_date %}
-                {{ a.section_due_date.strftime('%b %d, %Y') }}
+                {{ (a.section_due_date|to_local).strftime('%b %d, %Y') }}
               {% else %}
                 <span class="text-muted">—</span>
               {% endif %}

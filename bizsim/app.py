@@ -52,6 +52,18 @@ def create_app(config_name: str | None = None) -> Flask:
     def inject_globals():
         return {"current_year": _dt.now().year}
 
+    # Template filters: local-timezone display of stored UTC timestamps
+    from utils.tz import utc_naive_to_local
+
+    @app.template_filter("to_local")
+    def to_local_filter(dt):
+        return utc_naive_to_local(dt)
+
+    @app.template_filter("local_time")
+    def local_time_filter(dt, fmt="%b %d, %Y %I:%M %p"):
+        local_dt = utc_naive_to_local(dt)
+        return (local_dt.strftime(fmt) + " ET") if local_dt else ""
+
     # Root redirect
     @app.route("/")
     def index():
