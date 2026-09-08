@@ -112,7 +112,7 @@
                   <input type="number" step="any" class="form-control form-control-sm"
                          style="width: 6.5rem;"
                          name="final_score_{{ row.user_id }}"
-                         value="{{ row.final_score if row.final_score is not none else '' }}" />
+                         value="{{ '%.0f'|format(row.final_score) if row.final_score is not none else '' }}" />
                   {% if row.is_manual_override %}
                     <span class="text-warning" title="Manually edited">
                       <i class="bi bi-pencil-fill"></i>
