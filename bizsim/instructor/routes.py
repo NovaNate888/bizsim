@@ -1115,7 +1115,7 @@ def export_grades_csv(section_id: int, assignment_id: int):
     ])
     for r in rows:
         email_prefix = r["email"].split("@")[0] if r["email"] else ""
-        student_id = f"#{email_prefix}" if email_prefix else ""
+        student_id = email_prefix
         writer.writerow([
             r["alias"],
             r["email"],
