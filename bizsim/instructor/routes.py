@@ -1277,6 +1277,7 @@ def admin_delete_user(user_id: int):
     user = User.query.get_or_404(user_id)
     if user.is_admin:
         abort(403)
+    Grade.query.filter_by(user_id=user.id).delete()
     Submission.query.filter_by(user_id=user.id).delete()
     Enrollment.query.filter_by(user_id=user.id).delete()
     db.session.delete(user)
