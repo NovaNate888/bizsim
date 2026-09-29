@@ -10,12 +10,18 @@ def _database_url() -> str:
     """
     Read DATABASE_URL from the environment.
     Render (and Heroku) supply postgres:// URLs, but SQLAlchemy 2.x
-    requires the postgresql:// scheme — fix it automatically.
+    requires the postgresql:// scheme — fix it automatically. Also force the
+    psycopg2 driver explicitly (rather than letting SQLAlchemy pick a default),
+    since psycopg2-binary is the driver actually installed via requirements.txt —
+    this avoids ModuleNotFoundError if the raw URL ever specifies or defaults to
+    a different postgres driver (e.g. psycopg3).
     Falls back to a local SQLite file for development.
     """
     url = os.environ.get("DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'bizsim.db')}")
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
+    if url.startswith("postgresql://") or url.startswith("postgresql+"):
+        url = "postgresql+psycopg2://" + url.split("://", 1)[1]
     return url
 
 
