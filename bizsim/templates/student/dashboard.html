@@ -64,10 +64,12 @@
                        class="btn btn-sm btn-outline-primary flex-fill">
                       Submit
                     </a>
-                    <a href="{{ url_for('student.leaderboard', section_id=section.id, assignment_id=assignment.id) }}"
-                       class="btn btn-sm btn-outline-secondary flex-fill">
-                      <i class="bi bi-trophy"></i>
-                    </a>
+                    {% if assignment.assignment_type != 'exam' %}
+                      <a href="{{ url_for('student.leaderboard', section_id=section.id, assignment_id=assignment.id) }}"
+                         class="btn btn-sm btn-outline-secondary flex-fill">
+                        <i class="bi bi-trophy"></i>
+                      </a>
+                    {% endif %}
                   </div>
                 </div>
               </div>

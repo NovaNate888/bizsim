@@ -414,3 +414,21 @@ def score_from_bytes(
         return float(r2_score(y_true, y_pred))
     else:
         raise ValueError(f"Unknown scoring metric: '{metric}'")
+
+
+def extract_exam_rows(csv_bytes: bytes) -> list[dict]:
+    """Read a student's exam submission CSV and return a list of
+    {"question_number": ..., "predicted_answer": ...} dicts, one per row.
+    Column names are matched case-insensitively."""
+    df = pd.read_csv(io.BytesIO(csv_bytes))
+    col_map = {str(c).strip().lower(): c for c in df.columns}
+    qcol = col_map.get("question_number")
+    acol = col_map.get("predicted_answer")
+    if qcol is None or acol is None:
+        raise ValueError(
+            "Submission must contain 'question_number' and 'predicted_answer' columns."
+        )
+    rows = []
+    for _, row in df[[qcol, acol]].iterrows():
+        rows.append({"question_number": row[qcol], "predicted_answer": row[acol]})
+    return rows

@@ -99,8 +99,14 @@
     {% if best %}
       <div class="card shadow-sm border-0 mb-4 border-start border-4 border-primary">
         <div class="card-body text-center">
-          <p class="text-muted mb-1 small">Your Best Score</p>
-          {% if assignment.scoring_metric == 'profit_matrix' %}
+          {% if assignment.assignment_type == 'exam' %}
+            <p class="text-muted mb-1 small">Latest Submission</p>
+            <h1 class="display-6 fw-bold text-primary">
+              {{ best.submitted_at|local_time }}
+            </h1>
+            <p class="text-muted small mb-0">Grading happens outside BizSim.</p>
+          {% elif assignment.scoring_metric == 'profit_matrix' %}
+            <p class="text-muted mb-1 small">Your Best Score</p>
             <h1 class="display-5 fw-bold {% if best.score >= 0 %}text-success{% else %}text-danger{% endif %}">
               ${{ "{:,.0f}".format(best.score) }}
             </h1>
@@ -124,6 +130,7 @@
               </div>
             {% endif %}
           {% else %}
+            <p class="text-muted mb-1 small">Your Best Score</p>
             <h1 class="display-5 fw-bold text-primary">{{ "%.4f"|format(best.score) }}</h1>
             <p class="text-muted small mb-0">{{ assignment.scoring_metric.upper() }}</p>
           {% endif %}
@@ -134,10 +141,12 @@
     <div class="card shadow-sm border-0">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h6 class="mb-0"><i class="bi bi-clock-history me-1"></i>Submission History</h6>
-        <a href="{{ url_for('student.leaderboard', section_id=section.id, assignment_id=assignment.id) }}"
-           class="btn btn-sm btn-outline-secondary">
-          <i class="bi bi-trophy me-1"></i>Leaderboard
-        </a>
+        {% if assignment.assignment_type != 'exam' %}
+          <a href="{{ url_for('student.leaderboard', section_id=section.id, assignment_id=assignment.id) }}"
+             class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-trophy me-1"></i>Leaderboard
+          </a>
+        {% endif %}
       </div>
       <div class="card-body p-0">
         {% if history %}

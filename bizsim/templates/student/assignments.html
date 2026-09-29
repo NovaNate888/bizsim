@@ -46,7 +46,13 @@
               {% endif %}
             </td>
             <td>
-              {% if best_scores[a.id] %}
+              {% if a.assignment_type == 'exam' %}
+                {% if best_scores[a.id] %}
+                  <span class="text-muted small">Submitted {{ best_scores[a.id].submitted_at|local_time('%m/%d %I:%M %p') }}</span>
+                {% else %}
+                  <span class="text-muted">Not submitted</span>
+                {% endif %}
+              {% elif best_scores[a.id] %}
                 <span class="fw-semibold text-primary">
                   {{ "%.4f"|format(best_scores[a.id].score) }}
                 </span>
@@ -66,10 +72,12 @@
                  class="btn btn-sm btn-outline-primary me-1">
                 <i class="bi bi-upload me-1"></i>Submit
               </a>
-              <a href="{{ url_for('student.leaderboard', section_id=section.id, assignment_id=a.id) }}"
-                 class="btn btn-sm btn-outline-secondary">
-                <i class="bi bi-trophy me-1"></i>Leaderboard
-              </a>
+              {% if a.assignment_type != 'exam' %}
+                <a href="{{ url_for('student.leaderboard', section_id=section.id, assignment_id=a.id) }}"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="bi bi-trophy me-1"></i>Leaderboard
+                </a>
+              {% endif %}
             </td>
           </tr>
         {% endfor %}

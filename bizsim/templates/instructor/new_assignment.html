@@ -19,12 +19,28 @@
   <div class="card-body">
     <form method="POST" enctype="multipart/form-data">
 
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Assignment Type</label>
+        <select class="form-select" name="assignment_type" id="assignment_type">
+          <option value="standard" {% if not assignment or assignment.assignment_type == 'standard' %}selected{% endif %}>
+            Standard (scored in BizSim, has a leaderboard)
+          </option>
+          <option value="exam" {% if assignment and assignment.assignment_type == 'exam' %}selected{% endif %}>
+            Exam (no leaderboard — grading happens outside BizSim)
+          </option>
+        </select>
+        <div class="form-text">
+          Exam assignments skip scoring entirely and have no leaderboard. Instead, the section
+          view offers a CSV export of every student's latest submission.
+        </div>
+      </div>
+
       <div class="row g-3 mb-3">
         <div class="col-md-8">
           <label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
           <input type="text" class="form-control" name="title" required />
         </div>
-        <div class="col-md-4">
+        <div class="col-md-4 standard-assignment-fields">
           <label class="form-label fw-semibold">Scoring Metric <span class="text-danger">*</span></label>
           <select class="form-select" name="scoring_metric" id="scoring-metric" required>
             {% for value, label in metric_choices %}
@@ -41,7 +57,7 @@
       </div>
 
       <div class="row g-3 mb-3">
-        <div class="col-md-4">
+        <div class="col-md-4 standard-assignment-fields">
           <label class="form-label fw-semibold">Target Column Name</label>
           <input type="text" class="form-control" name="target_column"
                  placeholder="e.g. WarmLead" />
@@ -54,6 +70,7 @@
         </div>
       </div>
 
+      <div class="standard-assignment-fields">
       <!-- Auto-Grading settings -->
       <div class="card border-info mb-4">
         <div class="card-header bg-info bg-opacity-10 fw-semibold">
@@ -151,6 +168,8 @@
         </div>
       </div>
 
+      </div>
+
       <!-- Dataset files (multiple) -->
       <div class="mb-3">
         <label class="form-label fw-semibold">Dataset Files (for students to download)</label>
@@ -176,7 +195,7 @@
         <div class="form-text">Upload one or more CSV files. Students will see a download button for each.</div>
       </div>
 
-      <div class="mb-4">
+      <div class="mb-4 standard-assignment-fields">
         <label class="form-label fw-semibold">Ground Truth CSV</label>
         <input type="file" class="form-control" name="ground_truth_file" accept=".csv" />
         <div class="form-text">This file is never shown to students.</div>
@@ -209,6 +228,16 @@
     perfFields.style.display = gradingTypeSelect.value === 'completion' ? 'none' : '';
   }
   gradingTypeSelect.addEventListener('change', toggleGradingFields);
+
+  // Assignment type toggle (exam assignments hide all scoring/grading fields)
+  const assignmentTypeSelect = document.getElementById('assignment_type');
+  const standardFields = document.querySelectorAll('.standard-assignment-fields');
+  function toggleAssignmentTypeFields() {
+    standardFields.forEach(function (el) {
+      el.style.display = assignmentTypeSelect.value === 'exam' ? 'none' : '';
+    });
+  }
+  assignmentTypeSelect.addEventListener('change', toggleAssignmentTypeFields);
 
   // Dynamic file rows
   document.getElementById('add-file-row').addEventListener('click', function () {

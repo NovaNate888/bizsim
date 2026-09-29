@@ -16,13 +16,29 @@
   <div class="card-body">
     <form method="POST" enctype="multipart/form-data">
 
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Assignment Type</label>
+        <select class="form-select" name="assignment_type" id="assignment_type">
+          <option value="standard" {% if assignment.assignment_type == 'standard' %}selected{% endif %}>
+            Standard (scored in BizSim, has a leaderboard)
+          </option>
+          <option value="exam" {% if assignment.assignment_type == 'exam' %}selected{% endif %}>
+            Exam (no leaderboard — grading happens outside BizSim)
+          </option>
+        </select>
+        <div class="form-text">
+          Exam assignments skip scoring entirely and have no leaderboard. Instead, the section
+          view offers a CSV export of every student's latest submission.
+        </div>
+      </div>
+
       <div class="row g-3 mb-3">
         <div class="col-md-8">
           <label class="form-label fw-semibold">Title</label>
           <input type="text" class="form-control" name="title"
                  value="{{ assignment.title }}" required />
         </div>
-        <div class="col-md-4">
+        <div class="col-md-4 standard-assignment-fields" style="display:{{ 'none' if assignment.assignment_type == 'exam' else '' }};">
           <label class="form-label fw-semibold">Scoring Metric</label>
           <select class="form-select" name="scoring_metric">
             {% for value, label in metric_choices %}
@@ -40,7 +56,7 @@
       </div>
 
       <div class="row g-3 mb-3">
-        <div class="col-md-4">
+        <div class="col-md-4 standard-assignment-fields" style="display:{{ 'none' if assignment.assignment_type == 'exam' else '' }};">
           <label class="form-label fw-semibold">Target Column</label>
           <input type="text" class="form-control" name="target_column"
                  value="{{ assignment.target_column or '' }}" />
@@ -52,6 +68,7 @@
         </div>
       </div>
 
+      <div class="standard-assignment-fields" style="display:{{ 'none' if assignment.assignment_type == 'exam' else '' }};">
       <!-- Auto-Grading settings -->
       <div class="card border-info mb-3">
         <div class="card-header bg-info bg-opacity-10 fw-semibold">
@@ -170,6 +187,8 @@
         </div>
       </div>
 
+      </div>
+
       <!-- Existing dataset files -->
       <div class="mb-3">
         <label class="form-label fw-semibold">Dataset Files</label>
@@ -213,7 +232,7 @@
         <div class="form-text">Students will see a download button for each file.</div>
       </div>
 
-      <div class="mb-3">
+      <div class="mb-3 standard-assignment-fields" style="display:{{ 'none' if assignment.assignment_type == 'exam' else '' }};">
         <label class="form-label fw-semibold">Replace Ground Truth CSV</label>
         {% if assignment.ground_truth_filename %}
           <p class="small text-muted mb-1">Current: {{ assignment.ground_truth_filename }}</p>
@@ -256,6 +275,16 @@
     perfFields.style.display = gradingTypeSelect.value === 'completion' ? 'none' : '';
   }
   gradingTypeSelect.addEventListener('change', toggleGradingFields);
+
+  // Assignment type toggle (exam assignments hide all scoring/grading fields)
+  const assignmentTypeSelect = document.getElementById('assignment_type');
+  const standardFields = document.querySelectorAll('.standard-assignment-fields');
+  function toggleAssignmentTypeFields() {
+    standardFields.forEach(function (el) {
+      el.style.display = assignmentTypeSelect.value === 'exam' ? 'none' : '';
+    });
+  }
+  assignmentTypeSelect.addEventListener('change', toggleAssignmentTypeFields);
 
   // Dynamic file rows
   document.getElementById('add-file-row').addEventListener('click', function () {

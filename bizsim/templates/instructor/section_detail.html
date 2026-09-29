@@ -134,10 +134,17 @@
                         onclick="toggleDueDateForm({{ a.id }})">
                   <i class="bi bi-calendar-event"></i>
                 </button>
-                <a href="{{ url_for('instructor.leaderboard', section_id=section.id, assignment_id=a.id) }}"
-                   class="btn btn-sm btn-outline-warning">
-                  <i class="bi bi-trophy"></i>
-                </a>
+                {% if a.assignment_type == 'exam' %}
+                  <a href="{{ url_for('instructor.export_exam_csv', section_id=section.id, assignment_id=a.id) }}"
+                     class="btn btn-sm btn-outline-warning" title="Export latest submissions as CSV">
+                    CSV
+                  </a>
+                {% else %}
+                  <a href="{{ url_for('instructor.leaderboard', section_id=section.id, assignment_id=a.id) }}"
+                     class="btn btn-sm btn-outline-warning">
+                    <i class="bi bi-trophy"></i>
+                  </a>
+                {% endif %}
                 <a href="{{ url_for('instructor.edit_assignment', assignment_id=a.id) }}"
                    class="btn btn-sm btn-outline-secondary">
                   <i class="bi bi-pencil"></i>

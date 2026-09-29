@@ -41,6 +41,7 @@ from models import (
 from . import instructor_bp
 from utils import storage
 from utils.grading import compute_grades
+from utils.scoring import extract_exam_rows
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +410,11 @@ def new_assignment():
             grading_type = "performance"
         assignment.grading_type = grading_type
 
+        assignment_type = request.form.get("assignment_type", "standard")
+        if assignment_type not in ("standard", "exam"):
+            assignment_type = "standard"
+        assignment.assignment_type = assignment_type
+
         _apply_grading_settings(assignment)
         db.session.add(assignment)
         db.session.flush()
@@ -456,6 +462,11 @@ def edit_assignment(assignment_id: int):
         if grading_type not in ("performance", "completion"):
             grading_type = "performance"
         assignment.grading_type = grading_type
+
+        assignment_type = request.form.get("assignment_type", "standard")
+        if assignment_type not in ("standard", "exam"):
+            assignment_type = "standard"
+        assignment.assignment_type = assignment_type
 
         _apply_grading_settings(assignment)
 
@@ -518,6 +529,10 @@ def test_grade(assignment_id: int):
     assignment = Assignment.query.get_or_404(assignment_id)
     if not _owns_assignment(instr, assignment):
         abort(403)
+
+    if assignment.assignment_type == "exam":
+        flash("Test Grading doesn't apply to exam assignments.", "info")
+        return redirect(url_for("instructor.edit_assignment", assignment_id=assignment_id))
 
     rows = None
     summary = None
@@ -775,6 +790,10 @@ def leaderboard(section_id: int, assignment_id: int):
         abort(403)
     assignment = Assignment.query.get_or_404(assignment_id)
 
+    if assignment.assignment_type == "exam":
+        flash("This is an exam assignment — it doesn't have a leaderboard or grading.", "info")
+        return redirect(url_for("instructor.section_detail", section_id=section.id))
+
     enrollments = Enrollment.query.filter_by(section_id=section_id).all()
 
     board = []
@@ -921,6 +940,10 @@ def run_auto_grade(section_id: int, assignment_id: int):
         abort(403)
     assignment = Assignment.query.get_or_404(assignment_id)
 
+    if assignment.assignment_type == "exam":
+        flash("This is an exam assignment — it doesn't have a leaderboard or grading.", "info")
+        return redirect(url_for("instructor.section_detail", section_id=section.id))
+
     enrollments = Enrollment.query.filter_by(section_id=section_id).all()
 
     students = []
@@ -996,6 +1019,10 @@ def grades(section_id: int, assignment_id: int):
         abort(403)
     assignment = Assignment.query.get_or_404(assignment_id)
 
+    if assignment.assignment_type == "exam":
+        flash("This is an exam assignment — it doesn't have a leaderboard or grading.", "info")
+        return redirect(url_for("instructor.section_detail", section_id=section.id))
+
     enrollments = Enrollment.query.filter_by(section_id=section_id).all()
     grades_by_uid = {
         g.user_id: g
@@ -1035,7 +1062,11 @@ def save_grades(section_id: int, assignment_id: int):
     section = Section.query.get_or_404(section_id)
     if not _owns_section(instr, section):
         abort(403)
-    Assignment.query.get_or_404(assignment_id)
+    assignment = Assignment.query.get_or_404(assignment_id)
+
+    if assignment.assignment_type == "exam":
+        flash("This is an exam assignment — it doesn't have a leaderboard or grading.", "info")
+        return redirect(url_for("instructor.section_detail", section_id=section.id))
 
     now = datetime.now(timezone.utc)
     changed_count = 0
@@ -1083,6 +1114,10 @@ def export_grades_csv(section_id: int, assignment_id: int):
     if not _owns_section(instr, section):
         abort(403)
     assignment = Assignment.query.get_or_404(assignment_id)
+
+    if assignment.assignment_type == "exam":
+        flash("This is an exam assignment — it doesn't have a leaderboard or grading.", "info")
+        return redirect(url_for("instructor.section_detail", section_id=section.id))
 
     enrollments = Enrollment.query.filter_by(section_id=section_id).all()
     grades_by_uid = {
@@ -1135,6 +1170,46 @@ def export_grades_csv(section_id: int, assignment_id: int):
 
     return Response(
         buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/exam-export.csv")
+@login_required
+@instructor_required
+def export_exam_csv(section_id: int, assignment_id: int):
+    instr = _get_instructor_or_404()
+    section = Section.query.get_or_404(section_id)
+    if not _owns_section(instr, section):
+        abort(403)
+    assignment = Assignment.query.get_or_404(assignment_id)
+
+    enrollments = Enrollment.query.filter_by(section_id=section_id).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["alias", "email", "question_number", "predicted_answer"])
+
+    for enr in sorted(enrollments, key=lambda e: e.user.display_name.lower()):
+        user = enr.user
+        latest = _latest_submission_for_section(user.id, assignment_id, section_id)
+        if latest is None:
+            continue
+        try:
+            csv_bytes = storage.download_as_bytes(latest.filename)
+            rows = extract_exam_rows(csv_bytes)
+        except Exception as exc:
+            writer.writerow([user.display_name, user.email, "", f"ERROR: {exc}"])
+            continue
+        for r in rows:
+            writer.writerow([user.display_name, user.email, r["question_number"], r["predicted_answer"]])
+
+    safe_title = "".join(c if c.isalnum() else "_" for c in assignment.title).strip("_")
+    safe_section = "".join(c if c.isalnum() else "_" for c in section.section_name).strip("_")
+    filename = f"exam_export_{safe_title}_section_{safe_section}.csv"
+    return Response(
+        output.getvalue(),
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
@@ -1365,6 +1440,26 @@ def _best_submission_for_section(user_id: int, assignment_id: int, section_id: i
     if assignment.higher_is_better:
         return max(subs, key=lambda s: s.score)
     return min(subs, key=lambda s: s.score)
+
+
+def _latest_submission_for_section(user_id: int, assignment_id: int, section_id: int):
+    """Most recent submission scoped to a section, regardless of score.
+    Falls back to section_id=NULL rows for backward compatibility."""
+    sub = (
+        Submission.query
+        .filter_by(user_id=user_id, assignment_id=assignment_id, section_id=section_id)
+        .order_by(Submission.submitted_at.desc())
+        .first()
+    )
+    if sub is None:
+        sub = (
+            Submission.query
+            .filter_by(user_id=user_id, assignment_id=assignment_id)
+            .filter(Submission.section_id.is_(None))
+            .order_by(Submission.submitted_at.desc())
+            .first()
+        )
+    return sub
 
 
 def _assign_ranks(board: list, reverse: bool) -> None:

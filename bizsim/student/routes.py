@@ -75,6 +75,26 @@ def _best_submission_for_section(user_id: int, assignment: Assignment, section_i
     return min(subs, key=lambda s: s.score)
 
 
+def _latest_submission_for_section(user_id: int, assignment_id: int, section_id: int):
+    """Most recent submission scoped to a section, regardless of score.
+    Falls back to section_id=NULL rows for backward compatibility."""
+    sub = (
+        Submission.query
+        .filter_by(user_id=user_id, assignment_id=assignment_id, section_id=section_id)
+        .order_by(Submission.submitted_at.desc())
+        .first()
+    )
+    if sub is None:
+        sub = (
+            Submission.query
+            .filter_by(user_id=user_id, assignment_id=assignment_id)
+            .filter(Submission.section_id.is_(None))
+            .order_by(Submission.submitted_at.desc())
+            .first()
+        )
+    return sub
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
@@ -122,9 +142,14 @@ def assignments(section_id: int):
 
     best_scores = {}
     for assignment in assignments_list:
-        best_scores[assignment.id] = _best_submission_for_section(
-            current_user.id, assignment, section_id
-        )
+        if assignment.assignment_type == "exam":
+            best_scores[assignment.id] = _latest_submission_for_section(
+                current_user.id, assignment.id, section_id
+            )
+        else:
+            best_scores[assignment.id] = _best_submission_for_section(
+                current_user.id, assignment, section_id
+            )
 
     return render_template(
         "student/assignments.html",
@@ -211,7 +236,9 @@ def assignment_detail(section_id: int, assignment_id: int):
         score_detail_json = None
         error_message = None
 
-        if assignment.ground_truth_filename and assignment.target_column:
+        if assignment.assignment_type == "exam":
+            error_message = None
+        elif assignment.ground_truth_filename and assignment.target_column:
             try:
                 gt_bytes = storage.download_as_bytes(
                     f"ground_truth/{assignment.ground_truth_filename}"
@@ -320,7 +347,10 @@ def assignment_detail(section_id: int, assignment_id: int):
             )
         )
 
-    best = _best_submission_for_section(current_user.id, assignment, section_id)
+    if assignment.assignment_type == "exam":
+        best = _latest_submission_for_section(current_user.id, assignment_id, section_id)
+    else:
+        best = _best_submission_for_section(current_user.id, assignment, section_id)
     return render_template(
         "student/assignment_detail.html",
         section=section,

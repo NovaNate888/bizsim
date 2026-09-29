@@ -244,6 +244,8 @@ class Assignment(db.Model):
     max_submissions_per_day = db.Column(db.Integer, default=3, nullable=False)
     # Outlier-based auto-grading settings (see utils/grading.py)
     grading_type = db.Column(db.String(20), default="performance", nullable=False)
+    # "standard" (scored, has leaderboard) or "exam" (no scoring; graded outside BizSim)
+    assignment_type = db.Column(db.String(20), default="standard", nullable=False)
     fence = db.Column(db.Float, default=2.0, nullable=False)
     k = db.Column(db.Float, default=0.4, nullable=False)
     grade_range_lower = db.Column(db.Float, default=80.0, nullable=False)

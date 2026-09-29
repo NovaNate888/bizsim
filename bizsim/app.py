@@ -116,6 +116,8 @@ def _run_schema_migrations(db) -> None:
         "ALTER TABLE assignments ADD COLUMN absolute_low_score DOUBLE PRECISION DEFAULT 70.0 NOT NULL",
         # Phase 5: completion-vs-performance grading type
         "ALTER TABLE assignments ADD COLUMN grading_type VARCHAR(20) DEFAULT 'performance' NOT NULL",
+        # Phase 6: exam assignment type
+        "ALTER TABLE assignments ADD COLUMN assignment_type VARCHAR(20) DEFAULT 'standard' NOT NULL",
     ]
     for sql in new_columns:
         try:
