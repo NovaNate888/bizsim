@@ -19,7 +19,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from utils.tz import local_input_to_utc_naive
+from utils.tz import local_input_to_utc_naive, utc_naive_to_local
 
 from models import (
     Assignment,
@@ -1264,9 +1264,13 @@ def exam_export_create(section_id: int, assignment_id: int):
     r2_key = f"exam_exports/{section_id}/{assignment_id}/{uuid.uuid4().hex}.csv"
     storage.upload_fileobj(io.BytesIO(csv_bytes), r2_key)
 
-    safe_title = "".join(c if c.isalnum() else "_" for c in assignment.title).strip("_")
-    safe_section = "".join(c if c.isalnum() else "_" for c in section.section_name).strip("_")
-    download_name = f"exam_export_{safe_title}_section_{safe_section}.csv"
+    # e.g. MSBAi_8225_001_Oct_2026.csv (course code, section, month/year generated in ET)
+    generated = utc_naive_to_local(datetime.now(timezone.utc).replace(tzinfo=None))
+    name_parts = [section.course.code or section.course.name, section.section_name,
+                  generated.strftime("%b"), generated.strftime("%Y")]
+    safe_parts = ["_".join("".join(c if c.isalnum() else " " for c in part).split())
+                  for part in name_parts]
+    download_name = "_".join(p for p in safe_parts if p) + ".csv"
 
     old_key = None
     if export:
