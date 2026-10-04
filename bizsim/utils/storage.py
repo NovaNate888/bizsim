@@ -45,3 +45,8 @@ def generate_presigned_url(key: str, expiry: int = 3600) -> str:
         Params={"Bucket": _bucket(), "Key": key},
         ExpiresIn=expiry,
     )
+
+
+def delete_object(key: str) -> None:
+    """Delete an object from R2 (no error if it doesn't exist)."""
+    _client().delete_object(Bucket=_bucket(), Key=key)

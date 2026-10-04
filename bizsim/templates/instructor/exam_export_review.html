@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Exam export — {{ assignment.title }}{% endblock %}
+
+{% block content %}
+{% set download_url = url_for('instructor.exam_export_download', section_id=section.id, assignment_id=assignment.id) %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('instructor.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('instructor.course_detail', course_id=section.course_id) }}">
+        {{ section.course.display_name }}
+      </a>
+    </li>
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('instructor.section_detail', section_id=section.id) }}">
+        Section {{ section.section_name }}
+      </a>
+    </li>
+    <li class="breadcrumb-item active">Exam export</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <h2 class="fw-bold mb-1">
+      <i class="bi bi-file-earmark-spreadsheet text-warning me-2"></i>Exam export
+    </h2>
+    <p class="text-muted mb-0">{{ assignment.title }} &mdash; {{ section.full_label }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ download_url }}" class="btn btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>Download CSV
+    </a>
+  </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-body">
+    <dl class="row mb-0 small">
+      <dt class="col-sm-4">Assignment</dt>
+      <dd class="col-sm-8">{{ assignment.title }}</dd>
+      <dt class="col-sm-4">Export created</dt>
+      <dd class="col-sm-8">{{ export.created_at|local_time }}</dd>
+      <dt class="col-sm-4">Students included</dt>
+      <dd class="col-sm-8">{{ export.student_count }}</dd>
+      <dt class="col-sm-4">Students with errors</dt>
+      <dd class="col-sm-8">
+        {% if export.error_count > 0 %}
+          <span class="badge bg-danger">{{ export.error_count }}</span>
+          <span class="text-danger ms-1">Look for rows with "ERROR:" in predicted_answer.</span>
+        {% else %}
+          0
+        {% endif %}
+      </dd>
+    </dl>
+  </div>
+</div>
+
+{% if export.submissions_deleted_at %}
+  <div class="alert alert-info">
+    <i class="bi bi-info-circle me-1"></i>
+    Submissions were deleted on {{ export.submissions_deleted_at|local_time }}.
+    The export CSV remains available until the course is archived.
+  </div>
+{% else %}
+  <div class="card shadow-sm border-0">
+    <div class="card-body">
+      <p class="fw-semibold mb-3">
+        Check the downloaded file first. Delete the student submission files for this section now?
+      </p>
+      <div class="d-flex gap-2 flex-wrap">
+        <form method="POST" class="d-inline"
+              action="{{ url_for('instructor.exam_export_delete_submissions', section_id=section.id, assignment_id=assignment.id) }}"
+              onsubmit="return confirm('Permanently delete all exam submission files for this section? This cannot be undone.');">
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-trash me-1"></i>Yes, delete submissions
+          </button>
+        </form>
+        <a href="{{ url_for('instructor.section_detail', section_id=section.id) }}" class="btn btn-outline-secondary">
+          No, keep them
+        </a>
+      </div>
+      <p class="small text-muted mt-3 mb-0">
+        If you keep them, they're deleted automatically when this section is archived.
+        The export CSV is deleted when the course is archived.
+      </p>
+    </div>
+  </div>
+{% endif %}
+
+{% if request.args.get('fresh') %}
+<script>
+  // Start the download once without leaving this page.
+  window.addEventListener('load', function () {
+    const frame = document.createElement('iframe');
+    frame.style.display = 'none';
+    frame.src = {{ download_url|tojson }};
+    document.body.appendChild(frame);
+    // Drop ?fresh=1 so a page refresh doesn't download again
+    history.replaceState(null, '', window.location.pathname);
+  });
+</script>
+{% endif %}
+{% endblock %}

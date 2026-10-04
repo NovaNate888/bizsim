@@ -455,3 +455,32 @@ class Grade(db.Model):
 
     def __repr__(self) -> str:
         return f"<Grade assignment={self.assignment_id} section={self.section_id} user={self.user_id} final={self.final_score}>"
+
+
+# ---------------------------------------------------------------------------
+# ExamExport — saved combined CSV of the latest exam submissions for a
+# section. Kept until the course is archived.
+# ---------------------------------------------------------------------------
+
+class ExamExport(db.Model):
+    __tablename__ = "exam_exports"
+
+    id = db.Column(db.Integer, primary_key=True)
+    assignment_id = db.Column(db.Integer, db.ForeignKey("assignments.id"), nullable=False)
+    section_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=False)
+    r2_key = db.Column(db.String(512), nullable=False)
+    download_name = db.Column(db.String(255), nullable=False)
+    student_count = db.Column(db.Integer, default=0, nullable=False)
+    error_count = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    submissions_deleted_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("assignment_id", "section_id", name="uq_exam_export"),
+    )
+
+    assignment = db.relationship("Assignment")
+    section = db.relationship("Section")
+
+    def __repr__(self) -> str:
+        return f"<ExamExport assignment={self.assignment_id} section={self.section_id}>"

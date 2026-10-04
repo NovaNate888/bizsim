@@ -27,6 +27,7 @@ from models import (
     Course,
     CourseAssignment,
     Enrollment,
+    ExamExport,
     Grade,
     Instructor,
     METRIC_CHOICES,
@@ -41,7 +42,7 @@ from models import (
 from . import instructor_bp
 from utils import storage
 from utils.grading import compute_grades
-from utils.scoring import extract_exam_rows
+from utils.exam_export import build_exam_export
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +203,18 @@ def courses():
             if not _owns_course(instr, course):
                 abort(403)
             course.is_active = not course.is_active
+            msg = f"Course '{course.name}' updated."
+            if not course.is_active:
+                # Archiving: drop retained exam submissions and saved export CSVs
+                section_ids = [sec.id for sec in course.sections.all()]
+                deleted_subs = sum(_delete_exam_submissions(sid)[0] for sid in section_ids)
+                deleted_exports = _delete_exam_exports(section_ids)
+                if deleted_subs:
+                    msg += f" Deleted {deleted_subs} retained exam submission file(s)."
+                if deleted_exports:
+                    msg += f" Deleted {deleted_exports} saved exam export CSV(s)."
             db.session.commit()
-            flash(f"Course '{course.name}' updated.", "info")
+            flash(msg, "info")
 
         elif action == "delete":
             course_id = request.form.get("course_id", type=int)
@@ -258,9 +269,16 @@ def course_detail(course_id: int):
         elif action == "toggle_section":
             section_id = request.form.get("section_id", type=int)
             section = Section.query.get_or_404(section_id)
+            if not _owns_section(instr, section):
+                abort(403)
             section.is_active = not section.is_active
+            msg = "Section status updated."
+            if not section.is_active:
+                deleted, _failed = _delete_exam_submissions(section.id)
+                if deleted:
+                    msg += f" Deleted {deleted} retained exam submission file(s)."
             db.session.commit()
-            flash("Section status updated.", "info")
+            flash(msg, "info")
 
         elif action == "add_assignment":
             assignment_id = request.form.get("assignment_id", type=int)
@@ -632,6 +650,11 @@ def section_detail(section_id: int):
             ~Assignment.id.in_(effective_ids) if effective_ids else True,
         ).order_by(Assignment.title).all()
 
+    exam_exports = {
+        e.assignment_id: e
+        for e in ExamExport.query.filter_by(section_id=section_id).all()
+    }
+
     return render_template(
         "instructor/section_detail.html",
         section=section,
@@ -641,6 +664,7 @@ def section_detail(section_id: int):
         section_overrides_by_aid=section_overrides_by_aid,
         course_aid_set=course_aid_set,
         section_add_options=section_add_options,
+        exam_exports=exam_exports,
     )
 
 
@@ -915,6 +939,8 @@ def delete_section(section_id: int):
             {"sid": section_id},
         )
 
+    _delete_exam_exports([section_id])
+
     db.session.delete(section)
     db.session.commit()
 
@@ -1175,44 +1201,163 @@ def export_grades_csv(section_id: int, assignment_id: int):
     )
 
 
-@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/exam-export.csv")
-@login_required
-@instructor_required
-def export_exam_csv(section_id: int, assignment_id: int):
+# ---------------------------------------------------------------------------
+# Exam export — one combined CSV of every student's latest submission, saved
+# to R2 until the course is archived. The student files themselves are kept
+# until the instructor deletes them or the section is archived.
+# ---------------------------------------------------------------------------
+
+def _exam_export_context(section_id: int, assignment_id: int):
+    """Shared auth + exam-type guard. Returns (section, assignment, redirect_or_None)."""
     instr = _get_instructor_or_404()
     section = Section.query.get_or_404(section_id)
     if not _owns_section(instr, section):
         abort(403)
     assignment = Assignment.query.get_or_404(assignment_id)
+    if assignment.assignment_type != "exam":
+        flash("CSV export is only available for exam assignments.", "info")
+        return section, assignment, redirect(url_for("instructor.section_detail", section_id=section.id))
+    return section, assignment, None
 
-    enrollments = Enrollment.query.filter_by(section_id=section_id).all()
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["alias", "email", "question_number", "predicted_answer"])
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/exam-export", methods=["POST"])
+@login_required
+@instructor_required
+def exam_export_create(section_id: int, assignment_id: int):
+    section, assignment, bail = _exam_export_context(section_id, assignment_id)
+    if bail:
+        return bail
 
-    for enr in sorted(enrollments, key=lambda e: e.user.display_name.lower()):
+    export = ExamExport.query.filter_by(section_id=section_id, assignment_id=assignment_id).first()
+    if export and export.submissions_deleted_at:
+        # Regenerating now would replace the good file with an empty one.
+        flash("Submissions for this section were already deleted; showing the saved export.", "info")
+        return redirect(url_for("instructor.exam_export_review", section_id=section_id, assignment_id=assignment_id))
+
+    entries = []
+    for enr in Enrollment.query.filter_by(section_id=section_id).all():
         user = enr.user
         latest = _latest_submission_for_section(user.id, assignment_id, section_id)
         if latest is None:
             continue
+        entry = {
+            "course": section.course.display_name,
+            "section": section.section_name,
+            "alias": user.display_name,
+            "email": user.email,
+            "submitted_at": latest.submitted_at,
+            "csv_bytes": None,
+        }
         try:
-            csv_bytes = storage.download_as_bytes(latest.filename)
-            rows = extract_exam_rows(csv_bytes)
+            entry["csv_bytes"] = storage.download_as_bytes(latest.filename)
         except Exception as exc:
-            writer.writerow([user.display_name, user.email, "", f"ERROR: {exc}"])
-            continue
-        for r in rows:
-            writer.writerow([user.display_name, user.email, r["question_number"], r["predicted_answer"]])
+            current_app.logger.warning("Exam export: could not download %s: %s", latest.filename, exc)
+            entry["error"] = f"could not read submission file ({exc})"
+        entries.append(entry)
+
+    if not entries:
+        flash("No submissions to export yet.", "info")
+        return redirect(url_for("instructor.section_detail", section_id=section_id))
+
+    csv_bytes, ok_count, error_count = build_exam_export(entries)
+
+    r2_key = f"exam_exports/{section_id}/{assignment_id}/{uuid.uuid4().hex}.csv"
+    storage.upload_fileobj(io.BytesIO(csv_bytes), r2_key)
 
     safe_title = "".join(c if c.isalnum() else "_" for c in assignment.title).strip("_")
     safe_section = "".join(c if c.isalnum() else "_" for c in section.section_name).strip("_")
-    filename = f"exam_export_{safe_title}_section_{safe_section}.csv"
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    download_name = f"exam_export_{safe_title}_section_{safe_section}.csv"
+
+    old_key = None
+    if export:
+        old_key = export.r2_key
+        export.r2_key = r2_key
+        export.created_at = datetime.now(timezone.utc)
+    else:
+        export = ExamExport(section_id=section_id, assignment_id=assignment_id, r2_key=r2_key)
+        db.session.add(export)
+    export.download_name = download_name
+    export.student_count = ok_count + error_count
+    export.error_count = error_count
+    db.session.commit()
+
+    # Remove the previous file only after the new row is committed
+    if old_key and old_key != r2_key:
+        try:
+            storage.delete_object(old_key)
+        except Exception as exc:
+            current_app.logger.warning("Exam export: could not delete old export %s: %s", old_key, exc)
+
+    return redirect(url_for(
+        "instructor.exam_export_review", section_id=section_id, assignment_id=assignment_id, fresh=1
+    ))
+
+
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/exam-export/review")
+@login_required
+@instructor_required
+def exam_export_review(section_id: int, assignment_id: int):
+    section, assignment, bail = _exam_export_context(section_id, assignment_id)
+    if bail:
+        return bail
+    export = ExamExport.query.filter_by(section_id=section_id, assignment_id=assignment_id).first()
+    if export is None:
+        flash("No saved export for this assignment yet. Click CSV to generate one.", "warning")
+        return redirect(url_for("instructor.section_detail", section_id=section_id))
+    return render_template(
+        "instructor/exam_export_review.html",
+        section=section,
+        assignment=assignment,
+        export=export,
     )
+
+
+@instructor_bp.route("/section/<int:section_id>/assignment/<int:assignment_id>/exam-export/download")
+@login_required
+@instructor_required
+def exam_export_download(section_id: int, assignment_id: int):
+    section, assignment, bail = _exam_export_context(section_id, assignment_id)
+    if bail:
+        return bail
+    export = ExamExport.query.filter_by(section_id=section_id, assignment_id=assignment_id).first()
+    if export is None:
+        flash("No saved export for this assignment yet. Click CSV to generate one.", "warning")
+        return redirect(url_for("instructor.section_detail", section_id=section_id))
+    data = storage.download_as_bytes(export.r2_key)
+    return Response(
+        data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={export.download_name}"},
+    )
+
+
+@instructor_bp.route(
+    "/section/<int:section_id>/assignment/<int:assignment_id>/exam-export/delete-submissions",
+    methods=["POST"],
+)
+@login_required
+@instructor_required
+def exam_export_delete_submissions(section_id: int, assignment_id: int):
+    section, assignment, bail = _exam_export_context(section_id, assignment_id)
+    if bail:
+        return bail
+    export = ExamExport.query.filter_by(section_id=section_id, assignment_id=assignment_id).first()
+    if export is None:
+        flash("Generate and check the export CSV before deleting submissions.", "warning")
+        return redirect(url_for("instructor.section_detail", section_id=section_id))
+
+    deleted, failed = _delete_exam_submissions(section_id, assignment_id)
+    export.submissions_deleted_at = datetime.now(timezone.utc)
+    db.session.commit()
+
+    flash(
+        f"Deleted {deleted} submission file(s). The export CSV remains available "
+        f"until this course is archived.",
+        "success",
+    )
+    if failed:
+        flash(f"{failed} file(s) could not be deleted from storage and were kept.", "warning")
+    return redirect(url_for("instructor.section_detail", section_id=section_id))
 
 
 # ---------------------------------------------------------------------------
@@ -1460,6 +1605,51 @@ def _latest_submission_for_section(user_id: int, assignment_id: int, section_id:
             .first()
         )
     return sub
+
+
+def _delete_exam_submissions(section_id: int, assignment_id: int | None = None) -> tuple[int, int]:
+    """Delete R2 files and Submission rows for exam-type assignments in a section
+    (optionally just one assignment). Includes earlier attempts, not only the latest.
+    Returns (deleted, failed). The caller commits."""
+    query = (
+        Submission.query
+        .join(Assignment, Assignment.id == Submission.assignment_id)
+        .filter(Submission.section_id == section_id, Assignment.assignment_type == "exam")
+    )
+    if assignment_id is not None:
+        query = query.filter(Submission.assignment_id == assignment_id)
+
+    deleted = failed = 0
+    for sub in query.all():
+        try:
+            storage.delete_object(sub.filename)
+        except Exception as exc:
+            current_app.logger.warning(
+                "Could not delete exam submission file %s (submission %s): %s",
+                sub.filename, sub.id, exc,
+            )
+            failed += 1
+            continue
+        db.session.delete(sub)
+        deleted += 1
+    return deleted, failed
+
+
+def _delete_exam_exports(section_ids) -> int:
+    """Delete saved ExamExport R2 files and rows for the given sections.
+    Returns the number of exports removed. The caller commits."""
+    section_ids = list(section_ids)
+    if not section_ids:
+        return 0
+    count = 0
+    for export in ExamExport.query.filter(ExamExport.section_id.in_(section_ids)).all():
+        try:
+            storage.delete_object(export.r2_key)
+        except Exception as exc:
+            current_app.logger.warning("Could not delete exam export file %s: %s", export.r2_key, exc)
+        db.session.delete(export)
+        count += 1
+    return count
 
 
 def _assign_ranks(board: list, reverse: bool) -> None:
